@@ -1,5 +1,20 @@
 # Vaultx — Real-Time Bidding Platform Architecture
 
+Production-grade, event-driven Real-Time Bidding Platform built with a Microservices Architecture on Java 21 and Spring Boot 3. Designed to handle hundreds of thousands of concurrent users across thousands of simultaneous auctions. Demonstrates distributed systems engineering patterns used at FAANG-scale companies.
+
+Key Technical Highlights:
+
+- 5 independent microservices (API Gateway, User Service, Bidding Service, Transaction Service, Notification Service) with database-per-service isolation (PostgreSQL), zero shared databases, no cross-service foreign keys.
+- Real-time bidding engine supporting 500+ bids/second using optimistic locking, idempotency keys for duplicate prevention, and soft-close auction extensions — all with strong consistency guarantees.
+- Inter-service communication via gRPC (Protocol Buffers) — 7x faster than REST/JSON — and Apache Kafka with transactional outbox pattern, dead letter queues, and exponential backoff retries.
+- Security: JWT (RS256) with refresh token rotation, BCrypt, Spring Security RBAC, Redis-based rate limiting.
+- Observability: Zipkin tracing, Prometheus metrics, Grafana dashboards, structured logging with correlation IDs.
+- Resilience: Circuit breakers, gRPC deadlines/retries, Kafka DLQs, graceful shutdown, Saga pattern for payments.
+- Fully containerized — `docker compose up` launches Kafka, Redis, 3× PostgreSQL, Prometheus, Grafana, and Zipkin.
+- Tested with JUnit 5, Mockito, and Testcontainers against real PostgreSQL, Kafka, and Redis.
+
+**Tech Stack:** Java 21, Spring Boot 3, Spring Cloud Gateway, Spring Security, gRPC, Apache Kafka, PostgreSQL, Redis, Docker, Prometheus, Grafana, Zipkin, JUnit 5, Testcontainers, Maven
+
 ## Table of Contents
 
 1. [Overall Architecture Diagram](#1-overall-architecture-diagram)
