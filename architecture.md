@@ -1,6 +1,6 @@
 # Vaultx — Real-Time Bidding Platform Architecture
 
-Production-grade, event-driven Real-Time Bidding Platform built with a Microservices Architecture on Java 21 and Spring Boot 3. Designed to handle hundreds of thousands of concurrent users across thousands of simultaneous auctions. Demonstrates distributed systems engineering patterns used at FAANG-scale companies.
+Production-grade, event-driven Real-Time Bidding Platform built with a Microservices Architecture on Java 21 and Spring Boot 3. Designed to handle hundreds of thousands of concurrent users across thousands of simultaneous auctions. Demonstrates distributed systems engineering patterns.
 
 Key Technical Highlights:
 
