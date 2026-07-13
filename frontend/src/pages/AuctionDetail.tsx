@@ -10,6 +10,9 @@ import {
   formatCurrency,
   formatBidTime,
   MOCK_USER,
+  MOCK_TRANSACTIONS,
+  Transaction,
+  saveState,
 } from '../api';
 
 // ─── Image Carousel ───────────────────────────────────────────────────────────
@@ -180,6 +183,10 @@ export function AuctionDetail() {
       setBidError(`Minimum bid is ${formatCurrency(minBid)}`);
       return;
     }
+    if (MOCK_USER.kycStatus !== 'VERIFIED') {
+      setBidError('KYC verification is required to place a bid. Please complete verification in your Wallet.');
+      return;
+    }
     if (bidAmount > MOCK_USER.balance) {
       setBidError('Insufficient available balance');
       return;
@@ -196,6 +203,31 @@ export function AuctionDetail() {
         amount: bidAmount,
         timestamp: new Date(),
       };
+
+      // Mutate global data and persist
+      MOCK_USER.balance -= bidAmount;
+      MOCK_USER.reservedBalance += bidAmount;
+
+      auction.currentBid = bidAmount;
+      auction.totalBids += 1;
+      if (auction.reservePrice && auction.currentBid >= auction.reservePrice) {
+        auction.reserveMet = true;
+      }
+
+      MOCK_BID_HISTORY.unshift(newBid);
+
+      const newTxn: Transaction = {
+        id: `txn_bid_${Date.now()}`,
+        date: new Date(),
+        type: 'ESCROW_HOLD',
+        amount: -bidAmount,
+        status: 'COMPLETED',
+        description: `Bid placed on ${auction.title}`,
+      };
+      MOCK_TRANSACTIONS.unshift(newTxn);
+
+      saveState();
+
       setNewBidId(newBid.id);
       setBidHistory((prev) => [newBid, ...prev]);
       setBidAmount(bidAmount + auction.bidIncrement);

@@ -71,7 +71,8 @@ export interface Transaction {
 }
 
 // ─── Mock current user ───────────────────────────────────────────────────────
-export const MOCK_USER: AuthResponse = {
+const storedUser = localStorage.getItem('vaultx_user');
+export const MOCK_USER: AuthResponse = storedUser ? JSON.parse(storedUser) : {
   id: 'usr_8402',
   username: 'alex_vault',
   email: 'alex@vaultx.io',
@@ -81,6 +82,9 @@ export const MOCK_USER: AuthResponse = {
   reservedBalance: 3_200.00,
   kycStatus: 'VERIFIED',
 };
+if (!storedUser) {
+  localStorage.setItem('vaultx_user', JSON.stringify(MOCK_USER));
+}
 
 // ─── Mock Auctions ───────────────────────────────────────────────────────────
 const now = new Date();
@@ -155,7 +159,7 @@ const SELLER_MAISON: SellerInfo = {
   verified: true,
 };
 
-export const MOCK_AUCTIONS: Auction[] = [
+const DEFAULT_AUCTIONS: Auction[] = [
   {
     id: 'auc_001',
     lotNumber: '8402',
@@ -384,7 +388,20 @@ export const MOCK_AUCTIONS: Auction[] = [
   },
 ];
 
-export const MOCK_BID_HISTORY: Bid[] = [
+function reviveDates(key: string, value: any) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
+    return new Date(value);
+  }
+  return value;
+}
+
+const storedAuctions = localStorage.getItem('vaultx_auctions');
+export const MOCK_AUCTIONS: Auction[] = storedAuctions ? JSON.parse(storedAuctions, reviveDates) : DEFAULT_AUCTIONS;
+if (!storedAuctions) {
+  localStorage.setItem('vaultx_auctions', JSON.stringify(MOCK_AUCTIONS));
+}
+
+const DEFAULT_BID_HISTORY: Bid[] = [
   { id: 'b1', username: 'jade_collector', maskedUsername: 'j***e', isCurrentUser: false, amount: 9400, timestamp: new Date(now.getTime() - 5000) },
   { id: 'b2', username: 'bidmaster99',    maskedUsername: 'b***9', isCurrentUser: false, amount: 9200, timestamp: new Date(now.getTime() - 18000) },
   { id: 'b3', username: 'rare_finds',     maskedUsername: 'r***s', isCurrentUser: false, amount: 9000, timestamp: new Date(now.getTime() - 45000) },
@@ -394,7 +411,13 @@ export const MOCK_BID_HISTORY: Bid[] = [
   { id: 'b7', username: 'bidder_x',       maskedUsername: 'b***x', isCurrentUser: false, amount: 7900, timestamp: new Date(now.getTime() - 1200000) },
 ];
 
-export const MOCK_TRANSACTIONS: Transaction[] = [
+const storedBids = localStorage.getItem('vaultx_bids');
+export const MOCK_BID_HISTORY: Bid[] = storedBids ? JSON.parse(storedBids, reviveDates) : DEFAULT_BID_HISTORY;
+if (!storedBids) {
+  localStorage.setItem('vaultx_bids', JSON.stringify(MOCK_BID_HISTORY));
+}
+
+const DEFAULT_TRANSACTIONS: Transaction[] = [
   { id: 'txn_001', date: new Date(now.getTime() - 1 * 3600000),  type: 'DEPOSIT',         amount:  5000, status: 'COMPLETED', description: 'Bank transfer deposit' },
   { id: 'txn_002', date: new Date(now.getTime() - 3 * 3600000),  type: 'ESCROW_HOLD',     amount: -3200, status: 'COMPLETED', description: 'Bid placed on Rolex Submariner' },
   { id: 'txn_003', date: new Date(now.getTime() - 6 * 3600000),  type: 'ESCROW_RELEASE',  amount:  2500, status: 'COMPLETED', description: 'Outbid on Stratocaster auction' },
@@ -403,6 +426,12 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
   { id: 'txn_006', date: new Date(now.getTime() - 72 * 3600000), type: 'ESCROW_HOLD',     amount:  -800, status: 'FAILED',    description: 'Insufficient funds' },
   { id: 'txn_007', date: new Date(now.getTime() - 96 * 3600000), type: 'DEPOSIT',         amount:  2000, status: 'COMPLETED', description: 'Card deposit' },
 ];
+
+const storedTransactions = localStorage.getItem('vaultx_transactions');
+export const MOCK_TRANSACTIONS: Transaction[] = storedTransactions ? JSON.parse(storedTransactions, reviveDates) : DEFAULT_TRANSACTIONS;
+if (!storedTransactions) {
+  localStorage.setItem('vaultx_transactions', JSON.stringify(MOCK_TRANSACTIONS));
+}
 
 export const MOCK_SELLER_AUCTIONS = MOCK_AUCTIONS.filter((a) => a.seller === 'sports_memorabilia' || a.sellerInfo.handle === 'heritage_horology').concat([
   {
@@ -476,4 +505,11 @@ export function formatTime(d: Date): string {
 
 export function formatBidTime(d: Date): string {
   return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
+}
+
+export function saveState() {
+  localStorage.setItem('vaultx_user', JSON.stringify(MOCK_USER));
+  localStorage.setItem('vaultx_auctions', JSON.stringify(MOCK_AUCTIONS));
+  localStorage.setItem('vaultx_bids', JSON.stringify(MOCK_BID_HISTORY));
+  localStorage.setItem('vaultx_transactions', JSON.stringify(MOCK_TRANSACTIONS));
 }

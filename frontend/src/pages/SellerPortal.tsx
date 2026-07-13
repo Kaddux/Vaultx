@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TopNav } from '../components/TopNav';
 import { CountdownTimer } from '../components/CountdownTimer';
-import { MOCK_SELLER_AUCTIONS, Auction, formatCurrency, formatDate } from '../api';
+import { MOCK_SELLER_AUCTIONS, Auction, formatCurrency, formatDate, MOCK_AUCTIONS, MOCK_USER, saveState } from '../api';
 
 function AuctionStatusPill({ status }: { status: Auction['status'] }) {
   if (status === 'ACTIVE') return <span className="pill-green">ACTIVE</span>;
@@ -37,6 +37,7 @@ export function SellerPortal() {
   const [form, setForm] = useState<CreateAuctionForm>(DEFAULT_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [successToast, setSuccessToast] = useState(false);
+  const [auctions, setAuctions] = useState<Auction[]>(MOCK_SELLER_AUCTIONS);
 
   const update = (field: keyof CreateAuctionForm) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -49,6 +50,52 @@ export function SellerPortal() {
       setSubmitting(false);
       setShowCreateModal(false);
       setSuccessToast(true);
+
+      const newAuction: Auction = {
+        id: `auc_created_${Date.now()}`,
+        lotNumber: String(8412 + MOCK_AUCTIONS.length),
+        title: form.title,
+        subtitle: form.description.slice(0, 80),
+        description: form.description,
+        lotDescription: [form.description],
+        specs: [
+          { label: 'Starting Price', value: formatCurrency(Number(form.startingPrice)) },
+          { label: 'Reserve Price', value: form.reservePrice ? formatCurrency(Number(form.reservePrice)) : 'None' },
+          { label: 'Bid Increment', value: formatCurrency(Number(form.bidIncrement)) },
+        ],
+        seller: MOCK_USER.username,
+        sellerInfo: {
+          handle: MOCK_USER.username,
+          displayName: MOCK_USER.fullName,
+          avatarInitial: MOCK_USER.fullName.charAt(0),
+          rating: 5.0,
+          reviewCount: 1,
+          memberSince: '2026',
+          location: 'USA',
+          verified: true,
+        },
+        category: 'Collectibles',
+        startingPrice: Number(form.startingPrice),
+        reservePrice: form.reservePrice ? Number(form.reservePrice) : undefined,
+        bidIncrement: Number(form.bidIncrement),
+        currentBid: Number(form.startingPrice),
+        totalBids: 0,
+        status: 'ACTIVE',
+        endsAt: form.endTime ? new Date(form.endTime) : new Date(Date.now() + 7 * 24 * 3600 * 1000),
+        imageColor: '#1d4ed8',
+        imageAccent: 'sell',
+        imageCount: 1,
+        reserveMet: false,
+        views: 0,
+        watchers: 0,
+        payout: null,
+      };
+
+      MOCK_AUCTIONS.push(newAuction);
+      MOCK_SELLER_AUCTIONS.push(newAuction);
+      saveState();
+
+      setAuctions([...MOCK_SELLER_AUCTIONS]);
       setForm(DEFAULT_FORM);
       setTimeout(() => setSuccessToast(false), 3500);
     }, 1000);
@@ -87,10 +134,10 @@ export function SellerPortal() {
           {/* Stats bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             {[
-              { label: 'Total Listings', value: MOCK_SELLER_AUCTIONS.length, color: 'text-text-primary' },
-              { label: 'Active', value: MOCK_SELLER_AUCTIONS.filter((a) => a.status === 'ACTIVE').length, color: 'text-success' },
-              { label: 'Sold', value: MOCK_SELLER_AUCTIONS.filter((a) => a.status === 'SOLD').length, color: 'text-primary' },
-              { label: 'Total Bids', value: MOCK_SELLER_AUCTIONS.reduce((s, a) => s + a.totalBids, 0), color: 'text-warning' },
+              { label: 'Total Listings', value: auctions.length, color: 'text-text-primary' },
+              { label: 'Active', value: auctions.filter((a) => a.status === 'ACTIVE').length, color: 'text-success' },
+              { label: 'Sold', value: auctions.filter((a) => a.status === 'SOLD').length, color: 'text-primary' },
+              { label: 'Total Bids', value: auctions.reduce((s, a) => s + a.totalBids, 0), color: 'text-warning' },
             ].map((s) => (
               <div key={s.label} className="card p-4">
                 <div className="text-xs text-text-muted font-medium">{s.label}</div>
@@ -119,7 +166,7 @@ export function SellerPortal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {MOCK_SELLER_AUCTIONS.map((auction) => (
+                  {auctions.map((auction) => (
                     <tr key={auction.id}>
                       <td>
                         <div className="font-medium text-text-primary max-w-[220px] truncate">{auction.title}</div>

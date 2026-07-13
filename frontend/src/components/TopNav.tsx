@@ -23,7 +23,18 @@ export function TopNav() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-white border-b border-border flex items-center">
-      <div className="w-full max-w-[1280px] mx-auto px-6 flex items-center gap-8">
+      <div className="w-full max-w-[1280px] mx-auto px-6 flex items-center gap-4 sm:gap-6">
+
+        {/* Back Button */}
+        {location.pathname !== '/' && (
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center justify-center w-8 h-8 rounded-full border border-border bg-white text-text-secondary hover:text-text-primary hover:border-gray-300 hover:shadow-sm transition-all duration-150 cursor-pointer shrink-0"
+            title="Go back"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_back</span>
+          </button>
+        )}
 
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 shrink-0">

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { MOCK_USER, saveState } from '../api';
 
 interface StrengthCheck {
   label: string;
@@ -36,6 +37,16 @@ export function Register() {
         setError('409: Email or username already taken.');
       } else {
         localStorage.setItem('vaultx_logged_in', 'true');
+        
+        // Update user state for demo
+        MOCK_USER.username = form.username;
+        MOCK_USER.fullName = form.fullName;
+        MOCK_USER.email = form.email;
+        MOCK_USER.kycStatus = 'UNVERIFIED';
+        MOCK_USER.balance = 0.00;
+        MOCK_USER.reservedBalance = 0.00;
+        saveState();
+
         setSuccess(true);
         setShowKycModal(true);
       }
@@ -45,7 +56,15 @@ export function Register() {
   const allPassed = pwChecks.every((c) => c.test(form.password));
 
   return (
-    <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center px-4">
+    <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center px-4 relative">
+      {/* Back Button */}
+      <button
+        onClick={() => navigate('/')}
+        className="absolute top-6 left-6 flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_back</span>
+        Back
+      </button>
       {/* Success Toast */}
       {success && (
         <div className="fixed top-5 right-5 flex items-center gap-2.5 bg-success text-white text-sm font-medium px-4 py-3 rounded-lg shadow-card-hover animate-fadeIn z-50">
