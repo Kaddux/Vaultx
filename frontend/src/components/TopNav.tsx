@@ -7,27 +7,33 @@ export function TopNav() {
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const user = MOCK_USER;
+  const isLoggedIn = localStorage.getItem('vaultx_logged_in') === 'true';
 
   const navLinks = [
+    { label: 'Dashboard', to: '/' },
     { label: 'Explore Auctions', to: '/explore' },
     { label: 'Seller Portal', to: '/seller', sellerOnly: true },
     { label: 'Transactions', to: '/transactions' },
   ];
 
-  const isActive = (to: string) => location.pathname.startsWith(to);
+  const isActive = (to: string) => {
+    if (to === '/') return location.pathname === '/';
+    return location.pathname.startsWith(to);
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-white border-b border-border flex items-center">
       <div className="w-full max-w-[1280px] mx-auto px-6 flex items-center gap-8">
 
         {/* Logo */}
-        <Link to="/explore" className="flex items-center gap-2 shrink-0">
+        <Link to="/" className="flex items-center gap-2 shrink-0">
           <span className="text-primary font-bold text-xl tracking-tight">⚡ Vaultx</span>
         </Link>
 
         {/* Nav Links */}
         <nav className="flex items-center gap-1 flex-1">
           {navLinks.map((link) => {
+            if (link.to !== '/explore' && !isLoggedIn) return null;
             if (link.sellerOnly && user.role !== 'SELLER' && user.role !== 'ADMIN') return null;
             const active = isActive(link.to);
             return (
@@ -48,49 +54,50 @@ export function TopNav() {
 
         {/* Right side */}
         <div className="flex items-center gap-4">
+          {isLoggedIn ? (
+            <>
+              {/* Live Balance Widget */}
+              <Link
+                to="/wallet"
+                className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-white hover:border-gray-300 hover:shadow-card transition-all duration-150 group"
+              >
+                <div className="text-right">
+                  <div className="text-sm font-bold tabular-nums text-text-primary leading-none">
+                    {formatCurrency(user.balance)}
+                  </div>
+                  <div className="text-xs text-text-muted leading-none mt-0.5 flex items-center gap-0.5 justify-end">
+                    <span className="material-symbols-outlined" style={{ fontSize: '11px' }}>lock</span>
+                    <span className="tabular-nums">{formatCurrency(user.reservedBalance)}</span>
+                  </div>
+                </div>
+                <div className="w-px h-8 bg-border" />
+                <div className="flex flex-col items-start">
+                  <span className="text-xs font-medium text-text-secondary leading-none">Available</span>
+                  <span className="text-xs text-text-muted leading-none mt-0.5">Reserved</span>
+                </div>
+              </Link>
 
-          {/* Live Balance Widget */}
-          <Link
-            to="/wallet"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-white hover:border-gray-300 hover:shadow-card transition-all duration-150 group"
-          >
-            <div className="text-right">
-              <div className="text-sm font-bold tabular-nums text-text-primary leading-none">
-                {formatCurrency(user.balance)}
-              </div>
-              <div className="text-xs text-text-muted leading-none mt-0.5 flex items-center gap-0.5 justify-end">
-                <span className="material-symbols-outlined" style={{ fontSize: '11px' }}>lock</span>
-                <span className="tabular-nums">{formatCurrency(user.reservedBalance)}</span>
-              </div>
-            </div>
-            <div className="w-px h-8 bg-border" />
-            <div className="flex flex-col items-start">
-              <span className="text-xs font-medium text-text-secondary leading-none">Available</span>
-              <span className="text-xs text-text-muted leading-none mt-0.5">Reserved</span>
-            </div>
-          </Link>
+              {/* User Dropdown */}
+              <div className="relative">
+                <button
+                  id="user-menu-btn"
+                  onClick={() => setDropdownOpen((o) => !o)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-150 cursor-pointer"
+                >
+                  {/* Avatar */}
+                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
+                    {user.fullName.charAt(0)}
+                  </div>
+                  <span className="text-sm font-medium text-text-primary hidden sm:block">{user.username}</span>
+                  <span className="material-symbols-outlined text-text-secondary" style={{ fontSize: '18px' }}>
+                    expand_more
+                  </span>
+                </button>
 
-          {/* User Dropdown */}
-          <div className="relative">
-            <button
-              id="user-menu-btn"
-              onClick={() => setDropdownOpen((o) => !o)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors duration-150 cursor-pointer"
-            >
-              {/* Avatar */}
-              <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-                {user.fullName.charAt(0)}
-              </div>
-              <span className="text-sm font-medium text-text-primary hidden sm:block">{user.username}</span>
-              <span className="material-symbols-outlined text-text-secondary" style={{ fontSize: '18px' }}>
-                expand_more
-              </span>
-            </button>
-
-            {dropdownOpen && (
-              <>
-                {/* Backdrop */}
-                <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                {dropdownOpen && (
+                  <>
+                    {/* Backdrop */}
+                    <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
                 {/* Menu */}
                 <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg border border-border shadow-card-hover z-50 py-1 overlay-fade">
                   {/* User Info */}
@@ -130,7 +137,10 @@ export function TopNav() {
                   </div>
                   <div className="border-t border-border py-1">
                     <button
-                      onClick={() => navigate('/login')}
+                      onClick={() => {
+                        localStorage.removeItem('vaultx_logged_in');
+                        navigate('/login');
+                      }}
                       className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-danger hover:bg-danger-light transition-colors duration-100"
                     >
                       <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>logout</span>
@@ -140,7 +150,22 @@ export function TopNav() {
                 </div>
               </>
             )}
-          </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-success bg-success-light px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse inline-block" />
+                4,312 Users Online
+              </span>
+              <Link to="/login" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
+                Sign In
+              </Link>
+              <Link to="/register" className="btn-primary text-xs px-3.5 py-1.5">
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>

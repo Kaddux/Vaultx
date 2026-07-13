@@ -35,6 +35,7 @@ export function Register() {
       if (form.email === 'taken@vaultx.io') {
         setError('409: Email or username already taken.');
       } else {
+        localStorage.setItem('vaultx_logged_in', 'true');
         setSuccess(true);
         setShowKycModal(true);
       }

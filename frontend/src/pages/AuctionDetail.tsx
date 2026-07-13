@@ -168,6 +168,13 @@ export function AuctionDetail() {
 
   const handlePlaceBid = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const isLoggedIn = localStorage.getItem('vaultx_logged_in') === 'true';
+    if (!isLoggedIn) {
+      navigate('/login');
+      return;
+    }
+
     setBidError('');
     if (bidAmount < minBid) {
       setBidError(`Minimum bid is ${formatCurrency(minBid)}`);

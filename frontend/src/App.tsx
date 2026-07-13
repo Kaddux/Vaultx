@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Landing } from './pages/Landing';
+import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Explore } from './pages/Explore';
@@ -7,6 +9,11 @@ import { Wallet } from './pages/Wallet';
 import { Transactions } from './pages/Transactions';
 import { SellerPortal } from './pages/SellerPortal';
 import { Checkout } from './pages/Checkout';
+
+function RootRoute() {
+  const isLoggedIn = localStorage.getItem('vaultx_logged_in') === 'true';
+  return isLoggedIn ? <Home /> : <Landing />;
+}
 
 export default function App() {
   return (
@@ -25,8 +32,8 @@ export default function App() {
         <Route path="/checkout" element={<Checkout />} />
 
         {/* Default */}
-        <Route path="/" element={<Navigate to="/explore" replace />} />
-        <Route path="*" element={<Navigate to="/explore" replace />} />
+        <Route path="/" element={<RootRoute />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );

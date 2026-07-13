@@ -17,10 +17,12 @@ export function Login() {
     setTimeout(() => {
       setLoading(false);
       if (email === 'demo@vaultx.io' && password === 'Demo1234!') {
+        localStorage.setItem('vaultx_logged_in', 'true');
         navigate('/explore');
       } else if (email === 'suspended@vaultx.io') {
         setError('403: Account suspended — contact support');
       } else {
+        localStorage.setItem('vaultx_logged_in', 'true');
         navigate('/explore'); // auto-login for demo
       }
     }, 800);
