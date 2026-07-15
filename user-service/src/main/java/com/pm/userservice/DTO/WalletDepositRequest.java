@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 
 @Getter
 @Setter
-public class WalletDepositResponse {
+public class WalletDepositRequest {
 
         @NotNull
         @DecimalMin("0.01")

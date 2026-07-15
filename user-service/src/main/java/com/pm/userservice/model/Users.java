@@ -27,6 +27,9 @@ public class Users {
     @Column(length = 20)
     private String phone;
 
+    @Column(nullable = false)
+    private String role;
+
     @Column(name = "kyc_status", length = 20, nullable = false)
     private String kycStatus = "PENDING";
 
