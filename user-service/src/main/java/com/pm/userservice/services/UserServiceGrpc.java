@@ -1,0 +1,107 @@
+package com.pm.userservice.services;
+
+import com.pm.userservice.model.Users;
+import com.pm.userservice.model.Wallet;
+import com.pm.userservice.repository.UserRepository;
+import com.pm.userservice.repository.WalletRepository;
+import com.vaultx.user.grpc.*;
+import io.grpc.stub.StreamObserver;
+import lombok.RequiredArgsConstructor;
+import net.devh.boot.grpc.server.service.GrpcService;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@GrpcService
+@RequiredArgsConstructor
+public class UserServiceGrpc extends com.vaultx.user.grpc.UserServiceGrpc.UserServiceImplBase {
+
+    private final UserRepository userRepository;
+    private final WalletRepository walletRepository;
+
+    @Override
+    public void getUserProfile(GetUserProfileRequest request,
+                               StreamObserver<UserProfile> responseObserver){
+        try{
+            UUID userId = UUID.fromString(request.getUserId());
+            Users user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User Not Found"));
+
+            UserProfile profile = UserProfile.newBuilder()
+                    .setUserId(user.getId().toString())
+                    .setUsername(user.getUsername())
+                    .setEmail(user.getEmail())
+                    .setFullName(user.getFullName() != null ? user.getFullName() : "")
+                    .setKycStatus(user.getKycStatus())
+                    .setUserRating(5.0)
+                    .setRole(user.getRole())
+                    .setIsActive(true)
+                    .build();
+            responseObserver.onNext(profile);
+            responseObserver.onCompleted();
+        }catch (Exception e) {
+            responseObserver.onError(
+                    io.grpc.Status.NOT_FOUND.withDescription
+                            (e.getMessage()).asRuntimeException());
+    }
+}
+
+    @Override
+    public void getWalletBalance(GetWalletBalanceRequest request,
+                                 StreamObserver<WalletBalance> responseObserver) {
+        try {
+            UUID userId = UUID.fromString(request.getUserId());
+            Wallet wallet = walletRepository.findByUserId(userId)
+                    .orElseThrow(() -> new RuntimeException("Wallet not found: " + userId));
+
+            WalletBalance balance = WalletBalance.newBuilder()
+                    .setUserId(userId.toString())
+                    .setBalance(wallet.getBalance().doubleValue())
+                    .setReservedBalance(wallet.getReserveBalance().doubleValue())
+                    .setCurrency(wallet.getCurrency())
+                    .build();
+
+            responseObserver.onNext(balance);
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            responseObserver.onError(
+                    io.grpc.Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
+        }
+    }
+    @Override
+    @Transactional
+    public void updateWallet(UpdateWalletRequest request,
+                             StreamObserver<com.vaultx.user.grpc.WalletResponse> responseObserver){
+        try{
+            UUID userId = UUID.fromString(request.getUserId());
+            Wallet wallet = walletRepository.findByUserId(userId)
+                    .orElseThrow(() -> new RuntimeException("Wallet not found: " + userId));
+
+            BigDecimal amount = BigDecimal.valueOf(request.getAmount());
+            wallet.setBalance(wallet.getBalance().add(amount));
+            walletRepository.save(wallet);
+            // Wallet Response of grpc NOT Wallet entity
+            WalletResponse response = com.vaultx.user.grpc.WalletResponse.newBuilder()
+                    .setTransactionId(UUID.randomUUID().toString())
+                    .setNewBalance(wallet.getBalance().doubleValue())
+                    .setNewReservedBalance(wallet.getReserveBalance().doubleValue())
+                    .setStatus("COMPLETED")
+                    .setFailureReason("")
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }catch (Exception e) {
+            WalletResponse errorResponse = WalletResponse.newBuilder()
+                    .setTransactionId("")
+                    .setNewBalance(0)
+                    .setNewReservedBalance(0)
+                    .setStatus("FAILED")
+                    .setFailureReason(e.getMessage())
+                    .build();
+            responseObserver.onNext(errorResponse);
+            responseObserver.onCompleted();
+    }
+    }
+}

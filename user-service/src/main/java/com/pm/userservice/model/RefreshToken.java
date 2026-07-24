@@ -12,7 +12,6 @@ import java.util.UUID;
 @Setter
 public class RefreshToken {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private UUID id;
 
     @Column(name = "user_id", nullable = false)
