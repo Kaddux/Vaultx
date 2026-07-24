@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package vaultx.bidding;
+
+option java_multiple_files = true;
+option java_package = "com.vaultx.bidding.grpc";
+
+service BiddingService {
+    rpc GetAuctionDetails(GetAuctionDetailsRequest) returns (AuctionDetails);
+}
+
+message GetAuctionDetailsRequest {
+    string auction_id = 1;
+}
+
+message AuctionDetails {
+    string auction_id = 1;
+    string title = 2;
+    string seller_id = 3;
+    double current_bid = 4;
+    double starting_price = 5;
+    double reserve_price = 6;
+    string status = 7;
+    string currency = 8;
+}
