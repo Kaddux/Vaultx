@@ -2,12 +2,17 @@ package com.vaultx.bidding.service;
 
 import com.vaultx.bidding.dto.BidRequest;
 import com.vaultx.bidding.dto.BidResponse;
+import com.vaultx.bidding.dto.event.BidPlacedEvent;
 import com.vaultx.bidding.grpc.UserGrpcClient;
 import com.vaultx.bidding.model.Auction;
 import com.vaultx.bidding.model.Bid;
+import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionRepository;
 import com.vaultx.bidding.repository.BidRepository;
+import com.vaultx.bidding.repository.OutboxEventRepository;
 import com.vaultx.user.grpc.WalletBalance;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +28,8 @@ public class BidService {
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
     private final UserGrpcClient userGrpcClient;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public BidResponse placeBid(UUID auctionId, UUID bidderId, BidRequest request) {
@@ -78,6 +85,22 @@ public class BidService {
 
         auction.setCurrentBid(request.getAmount());
         auctionRepository.save(auction);
+
+        try {
+            BidPlacedEvent payload = new BidPlacedEvent(
+                    bid.getId(), auctionId, bidderId, request.getAmount(),
+                    auction.getCurrentBid(), LocalDateTime.now(),
+                    request.getIdempotencyKey());
+
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setAggregateType("AUCTION");
+            outbox.setAggregateId(auctionId.toString());
+            outbox.setEventType("BID_PLACED");
+            outbox.setPayload(objectMapper.writeValueAsString(payload));
+            outboxEventRepository.save(outbox);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize bid placed event", e);
+        }
 
         return toResponse(bid, auction);
     }

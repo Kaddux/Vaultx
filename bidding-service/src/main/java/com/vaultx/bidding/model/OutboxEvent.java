@@ -1,17 +1,17 @@
-package com.pm.transactionservice.model;
+package com.vaultx.bidding.model;
 
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
+@Table(name = "outbox_events")
 @Getter
 @Setter
-@Table(name = "outbox_events")
-public class OutboxEntity {
+public class OutboxEvent {
+
     @Id
     private UUID id;
 
@@ -24,7 +24,7 @@ public class OutboxEntity {
     @Column(name = "event_type", nullable = false, length = 100)
     private String eventType;
 
-    @Column(nullable = false, columnDefinition = "JSONB")
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String payload;
 
     @Column(name = "created_at", nullable = false, updatable = false)
