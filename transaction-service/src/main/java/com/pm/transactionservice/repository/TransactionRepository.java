@@ -1,0 +1,18 @@
+package com.pm.transactionservice.repository;
+
+import com.pm.transactionservice.model.Transaction;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+
+    List<Transaction> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    List<Transaction> findByAuctionIdOrderByCreatedAtDesc(UUID auctionId);
+
+    Optional<Transaction> findByIdempotencyKey(String idempotencyKey);
+}

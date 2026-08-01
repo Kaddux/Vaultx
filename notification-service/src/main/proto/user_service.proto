@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package vaultx.user;
+
+option java_multiple_files = true;
+option java_package = "com.vaultx.user.grpc";
+
+service UserService {
+    rpc GetUserProfile(GetUserProfileRequest) returns (UserProfile);
+    rpc GetWalletBalance(GetWalletBalanceRequest) returns (WalletBalance);
+    rpc UpdateWallet(UpdateWalletRequest) returns (WalletResponse);
+}
+
+message GetUserProfileRequest {
+    string user_id = 1;
+}
+
+message UserProfile {
+    string user_id = 1;
+    string username = 2;
+    string email = 3;
+    string full_name = 4;
+    string kyc_status = 5;
+    double user_rating = 6;
+    string role = 7;
+    bool is_active = 8;
+}
+
+message GetWalletBalanceRequest {
+    string user_id = 1;
+}
+
+message WalletBalance {
+    string user_id = 1;
+    double balance = 2;
+    double reserved_balance = 3;
+    string currency = 4;
+}
+
+message UpdateWalletRequest {
+    string user_id = 1;
+    double amount = 2;
+    string transaction_type = 3;
+    string idempotency_key = 4;
+    string description = 5;
+}
+
+message WalletResponse {
+    string transaction_id = 1;
+    double new_balance = 2;
+    double new_reserved_balance = 3;
+    string status = 4;
+    string failure_reason = 5;
+}
