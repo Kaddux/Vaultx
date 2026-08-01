@@ -54,6 +54,8 @@ public class Users {
             id = UUID.randomUUID();
         if(created_at == null)
             created_at = LocalDateTime.now();
+        if(updated_at == null)
+            updated_at = LocalDateTime.now();
     }
     @PreUpdate
     void OnUpdate(){

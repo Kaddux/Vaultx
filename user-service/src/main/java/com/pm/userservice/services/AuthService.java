@@ -1,27 +1,34 @@
 package com.pm.userservice.services;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pm.userservice.DTO.AuthResponseDTO;
 import com.pm.userservice.DTO.LoginRequestDTO;
 import com.pm.userservice.DTO.RefreshRequestDTO;
 import com.pm.userservice.DTO.RegisterRequestDTO;
 import com.pm.userservice.Exceptions.EmailAlreadyExistsException;
+import com.pm.userservice.model.OutboxEvent;
 import com.pm.userservice.model.RefreshToken;
 import com.pm.userservice.model.Users;
 import com.pm.userservice.model.Wallet;
+import com.pm.userservice.repository.OutboxEventRepository;
 import com.pm.userservice.repository.RefreshTokenRepository;
 import com.pm.userservice.repository.UserRepository;
 import com.pm.userservice.repository.WalletRepository;
 import com.pm.userservice.security.JwtTokenProvider;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -29,8 +36,10 @@ public class AuthService {
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final OutboxEventRepository outboxEventRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     public AuthResponseDTO register(RegisterRequestDTO request) {
@@ -39,7 +48,6 @@ public class AuthService {
         }
 
         Users user = new Users();
-        user.setId(UUID.randomUUID());
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
@@ -55,6 +63,8 @@ public class AuthService {
         wallet.setReserveBalance(BigDecimal.ZERO);
         wallet.setCurrency("USD");
         walletRepository.save(wallet);
+
+        emitUserRegistered(user);
 
         return generateAuthResponse(user);
     }
@@ -101,5 +111,29 @@ public class AuthService {
         refreshTokenRepository.save(rt);
 
         return new AuthResponseDTO(accessToken, refreshTokenValue, 900000L, "Bearer");
+    }
+
+    private void emitUserRegistered(Users user) {
+        try {
+            Map<String, Object> payload = Map.of(
+                    "userId", user.getId().toString(),
+                    "username", user.getUsername(),
+                    "email", user.getEmail(),
+                    "role", user.getRole(),
+                    "registeredAt", LocalDateTime.now().toString()
+            );
+
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setAggregateType("USER");
+            outbox.setAggregateId(user.getId().toString());
+            outbox.setEventType("USER_REGISTERED");
+            outbox.setPayload(objectMapper.writeValueAsString(payload));
+            outboxEventRepository.save(outbox);
+
+            log.info("Queued USER_REGISTERED outbox event for userId={}", user.getId());
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize USER_REGISTERED event for userId={}",
+                    user.getId(), e);
+        }
     }
 }

@@ -14,6 +14,8 @@ import com.vaultx.user.grpc.WalletBalance;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -27,9 +29,12 @@ public class BidService {
 
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
-    private final UserGrpcClient userGrpcClient;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+
+    @Lazy
+    @Autowired
+    private UserGrpcClient userGrpcClient;
 
     @Transactional
     public BidResponse placeBid(UUID auctionId, UUID bidderId, BidRequest request) {

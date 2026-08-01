@@ -52,8 +52,18 @@ public class KafkaTopicConfig {
     }
 
     @Bean
-    public NewTopic auctionLostTopic() {  // Changed from snake_case typo in architecture doc
+    public NewTopic auctionLostTopic() {
         return new NewTopic("auction.lost", 6, (short) 1);
+    }
+
+    @Bean
+    public NewTopic paymentCompletedTopic() {
+        return new NewTopic("payment.completed", 6, (short) 1);
+    }
+
+    @Bean
+    public NewTopic paymentFailedTopic() {
+        return new NewTopic("payment.failed", 6, (short) 1);
     }
 
     // --- Retry Topics (3 retry attempts) ---

@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package vaultx.transaction;
+
+option java_multiple_files = true;
+option java_package = "com.vaultx.transaction.grpc";
+
+service TransactionService {
+    rpc GetPaymentStatus(GetPaymentStatusRequest) returns (PaymentStatus);
+}
+
+message GetPaymentStatusRequest {
+    string auction_id = 1;
+}
+
+message PaymentStatus {
+    string payment_intent_id = 1;
+    string status = 2;
+    double amount = 3;
+    string currency = 4;
+    string failure_reason = 5;
+}

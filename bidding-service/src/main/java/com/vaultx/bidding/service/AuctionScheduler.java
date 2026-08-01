@@ -44,6 +44,7 @@ public class AuctionScheduler {
             try {
                 Map<String, Object> payload = Map.of(
                         "auctionId", auction.getId().toString(),
+                        "sellerId", auction.getSellerId().toString(),
                         "startTime", auction.getStartTime().toString(),
                         "endTime", auction.getEndTime().toString());
 
@@ -95,9 +96,27 @@ public class AuctionScheduler {
                     won.setPayload(objectMapper.writeValueAsString(payload));
                     outboxEventRepository.save(won);
                 }
+
+                emitAuctionLostEvents(auction, payload, winnerId);
             } catch (JsonProcessingException e) {
                 log.error("Failed to serialize auction ended event for {}", auction.getId(), e);
             }
+        }
+    }
+
+    private void emitAuctionLostEvents(Auction auction, AuctionEndedEvent payload,
+                                       UUID winnerId) throws JsonProcessingException {
+        List<Bid> allBids = bidRepository.findByAuctionIdOrderByCreatedAtDesc(auction.getId());
+        for (Bid bid : allBids) {
+            if (winnerId != null && bid.getBidderId().equals(winnerId)) {
+                continue;
+            }
+            OutboxEvent lost = new OutboxEvent();
+            lost.setAggregateType("AUCTION");
+            lost.setAggregateId(bid.getBidderId().toString());
+            lost.setEventType("AUCTION_LOST");
+            lost.setPayload(objectMapper.writeValueAsString(payload));
+            outboxEventRepository.save(lost);
         }
     }
 }
