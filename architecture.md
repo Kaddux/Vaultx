@@ -1405,44 +1405,44 @@ jobs:
   - [OK] Fix package structure (all code under `com.vaultx.{service}`)
   - [OK] Fix Dockerfile EXPOSE ports mismatch
   - [OK] Fix gRPC deprecated `usePlaintext()` → `withInsecure()`
-- [ ] Implement User Service fully
-  - [ ] JWT authentication (access + refresh tokens)
-  - [ ] BCrypt password hashing
-  - [ ] Spring Security configuration
-  - [ ] Register, login, refresh endpoints
-  - [ ] User profile CRUD
-  - [ ] Wallet implementation
-- [ ] Implement Bidding Service core
-  - [ ] Auction CRUD
-  - [ ] Bid placement
-  - [ ] Auction state scheduler
-  - [ ] Optimistic locking for bids
-  - [ ] Idempotency for bids
-- [ ] Docker Compose with PostgreSQL for all services
-- [ ] Seed data scripts
+- [OK] Implement User Service fully
+  - [OK] JWT authentication (access + refresh tokens)
+  - [OK] BCrypt password hashing
+  - [OK] Spring Security configuration
+  - [OK] Register, login, refresh endpoints
+  - [OK] User profile CRUD
+  - [OK] Wallet implementation
+- [OK] Implement Bidding Service core
+  - [OK] Auction CRUD
+  - [OK] Bid placement
+  - [OK] Auction state scheduler
+  - [OK] Optimistic locking for bids
+  - [OK] Idempotency for bids
+- [OK] Docker Compose with PostgreSQL for all services
+- [] Seed data scripts
 
 ## Milestone 2: gRPC Communication (Week 3)
 
 **Goal**: Inter-service communication working via gRPC.
 
-- [ ] Define all protobuf files
-- [ ] gRPC server: User Service (GetUserProfile, GetWalletBalance, UpdateWallet)
-- [ ] gRPC server: Bidding Service (GetBidHistory, etc.)
-- [ ] gRPC client implementations in all consumers
-- [ ] gRPC error handling, deadlines, timeouts
+- [OK] Define all protobuf files
+- [OK] gRPC server: User Service (GetUserProfile, GetWalletBalance, UpdateWallet)
+- [OK] gRPC server: Bidding Service (GetBidHistory, etc.)
+- [OK] gRPC client implementations in all consumers
+- [OK] gRPC error handling, deadlines, timeouts
 
 ## Milestone 3: Event-Driven Architecture with Kafka (Week 4)
 
 **Goal**: Asynchronous communication via Kafka with retries and DLQ.
 
-- [ ] Kafka + Zookeeper in Docker Compose
-- [ ] Schema Registry (Avro or JSON Schema)
-- [ ] Transactional Outbox pattern implementation
-- [ ] Kafka producers for all events
-- [ ] Kafka consumers in Notification Service
-- [ ] Retry mechanism (3 retries, exponential backoff)
-- [ ] Dead Letter Topic per event type
-- [ ] Idempotent consumers
+- [OK] Kafka + Zookeeper in Docker Compose
+- [OK] Schema Registry (Avro or JSON Schema)
+- [OK] Transactional Outbox pattern implementation
+- [OK] Kafka producers for all events
+- [OK] Kafka consumers in Notification Service
+- [OK] Retry mechanism (3 retries, exponential backoff)
+- [OK] Dead Letter Topic per event type
+- [OK] Idempotent consumers
 
 ## Milestone 4: Transaction Service (Week 5)
 
