@@ -2,6 +2,7 @@ package com.vaultx.bidding.service;
 
 import com.vaultx.bidding.dto.AuctionRequest;
 import com.vaultx.bidding.dto.AuctionResponse;
+import com.vaultx.bidding.metrics.BiddingMetrics;
 import com.vaultx.bidding.model.Auction;
 import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionRepository;
@@ -35,6 +36,9 @@ class AuctionServiceTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    @Mock
+    private BiddingMetrics biddingMetrics;
 
     @InjectMocks
     private AuctionService auctionService;

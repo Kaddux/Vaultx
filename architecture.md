@@ -798,7 +798,7 @@ All gRPC services are defined in `.proto` files under each service's `src/main/p
 // ==========================================
 syntax = "proto3";
 
-package vaultx.user;
+//package vaultx.user;
 
 option java_multiple_files = true;
 option java_package = "com.vaultx.user.grpc";
@@ -860,43 +860,43 @@ message WalletResponse {
 // ==========================================
 // bidding-service/src/main/proto/bidding_service.proto
 // ==========================================
-syntax = "proto3";
+//syntax = "proto3";
 
-package vaultx.bidding;
+//package vaultx.bidding;
 
-option java_multiple_files = true;
-option java_package = "com.vaultx.bidding.grpc";
+//option java_multiple_files = true;
+//option java_package = "com.vaultx.bidding.grpc";
 
-service BiddingService {
+//service BiddingService {
     // Called by User Service to register a new user in bidding context
-    rpc RegisterUser(UserRegistrationRequest) returns (UserRegistrationResponse);
-}
+    //rpc RegisterUser(UserRegistrationRequest) returns (UserRegistrationResponse);
+//}
 
-message UserRegistrationRequest {
-    string user_id = 1;
-    string username = 2;
-    string email = 3;
-}
+//message UserRegistrationRequest {
+   // string user_id = 1;
+   // string username = 2;
+   // string email = 3;
+//}
 
-message UserRegistrationResponse {
-    bool success = 1;
-    string message = 2;
-}
+//message UserRegistrationResponse {
+    //bool success = 1;
+   // string message = 2;
+//}
 
 // ==========================================
 // transaction-service/src/main/proto/transaction_service.proto
 // ==========================================
-syntax = "proto3";
+//syntax = "proto3";
 
-package vaultx.transaction;
+//package vaultx.transaction;
 
-option java_multiple_files = true;
-option java_package = "com.vaultx.transaction.grpc";
+//option java_multiple_files = true;
+//option java_package = "com.vaultx.transaction.grpc";
 
-service TransactionService {
+//service TransactionService {
     // Get payment status for a given auction. Used by Bidding Service.
-    rpc GetPaymentStatus(GetPaymentStatusRequest) returns (PaymentStatus);
-}
+    //rpc GetPaymentStatus(GetPaymentStatusRequest) returns (PaymentStatus);
+//}
 
 message GetPaymentStatusRequest {
     string auction_id = 1;

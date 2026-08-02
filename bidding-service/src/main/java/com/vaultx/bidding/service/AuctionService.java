@@ -3,6 +3,7 @@ package com.vaultx.bidding.service;
 import com.vaultx.bidding.dto.AuctionRequest;
 import com.vaultx.bidding.dto.AuctionResponse;
 import com.vaultx.bidding.dto.event.AuctionCreatedEvent;
+import com.vaultx.bidding.metrics.BiddingMetrics;
 import com.vaultx.bidding.model.Auction;
 import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionRepository;
@@ -23,6 +24,7 @@ public class AuctionService {
     private final AuctionRepository auctionRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final BiddingMetrics biddingMetrics;
 
     @Transactional
     public AuctionResponse create(AuctionRequest request, UUID sellerId) {
@@ -58,6 +60,7 @@ public class AuctionService {
             throw new RuntimeException("Failed to serialize auction created event", e);
         }
 
+        biddingMetrics.recordAuctionCreated();
         return toResponse(saved);
     }
 

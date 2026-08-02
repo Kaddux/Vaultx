@@ -1,0 +1,90 @@
+server:
+  port: 8080
+
+jwt:
+  public-key-path: "${JWT_PUBLIC_KEY_PATH:jwt-public.pem}"
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 3000
+        response-timeout: 10s
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "http://localhost:5173,http://localhost:3000"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+      routes:
+        - id: user-service-auth
+          uri: ${USER_SERVICE_URI:http://user-service:8000}
+          predicates:
+            - Path=/api/auth/**
+
+        - id: user-service-api
+          uri: ${USER_SERVICE_URI:http://user-service:8000}
+          predicates:
+            - Path=/api/users/**,/api/wallet/**
+          filters:
+            - JwtAuth
+
+        - id: bidding-service-public
+          uri: ${BIDDING_SERVICE_URI:http://bidding-service:8001}
+          predicates:
+            - Method=GET
+            - Path=/api/auctions/**
+
+        - id: bidding-service-secure
+          uri: ${BIDDING_SERVICE_URI:http://bidding-service:8001}
+          predicates:
+            - Path=/api/auctions/**
+          filters:
+            - JwtAuth
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 30
+                redis-rate-limiter.burstCapacity: 60
+                key-resolver: "#{@userKeyResolver}"
+
+        - id: transaction-service
+          uri: ${TRANSACTION_SERVICE_URI:http://transaction-service:8002}
+          predicates:
+            - Path=/api/payments/**,/api/transactions/**
+          filters:
+            - JwtAuth
+
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URI:http://notification-service:8003}
+          predicates:
+            - Path=/api/notifications/**
+          filters:
+            - JwtAuth
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_URL:http://zipkin:9411/api/v2/spans}
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"

@@ -4,6 +4,7 @@ import com.vaultx.bidding.dto.BidRequest;
 import com.vaultx.bidding.dto.BidResponse;
 import com.vaultx.bidding.dto.event.BidPlacedEvent;
 import com.vaultx.bidding.grpc.UserGrpcClient;
+import com.vaultx.bidding.metrics.BiddingMetrics;
 import com.vaultx.bidding.model.Auction;
 import com.vaultx.bidding.model.Bid;
 import com.vaultx.bidding.model.OutboxEvent;
@@ -31,6 +32,7 @@ public class BidService {
     private final BidRepository bidRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final BiddingMetrics biddingMetrics;
 
     @Lazy
     @Autowired
@@ -38,6 +40,18 @@ public class BidService {
 
     @Transactional
     public BidResponse placeBid(UUID auctionId, UUID bidderId, BidRequest request) {
+        long start = System.nanoTime();
+        try {
+            return doPlaceBid(auctionId, bidderId, request);
+        } catch (RuntimeException e) {
+            biddingMetrics.recordBidRejected();
+            throw e;
+        } finally {
+            biddingMetrics.recordBidLatency(start);
+        }
+    }
+
+    private BidResponse doPlaceBid(UUID auctionId, UUID bidderId, BidRequest request) {
         if (bidRepository.findByIdempotencyKey(request.getIdempotencyKey()).isPresent()) {
             throw new RuntimeException("Duplicate bid request");
         }
@@ -90,6 +104,8 @@ public class BidService {
 
         auction.setCurrentBid(request.getAmount());
         auctionRepository.save(auction);
+
+        biddingMetrics.recordBidPlaced();
 
         try {
             BidPlacedEvent payload = new BidPlacedEvent(

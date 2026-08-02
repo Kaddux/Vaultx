@@ -26,7 +26,9 @@ Vaultx is a production-grade, event-driven Real-Time Bidding Platform built with
 ## 📂 Project Structure
 
 - `architecture.md` - Complete systems and architecture blueprint.
-- [workflows.md](file:///d:/Projects/Vaultx/workflows.md) - End-to-end user and program workflows.
+- `workflows.md` - End-to-end user and program workflows.
+- `WORKFLOW.md` - Workflow & code explanation.
+- `INTERVIEW_QA.md` - Backend interview Q&A set.
 - `pom.xml` - Parent maven configuration.
 - `user-service/` - Microservice handling user registry, authentication, and wallets.
 - `README.md` - Quick start guide (this file).

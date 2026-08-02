@@ -1,6 +1,7 @@
 package com.vaultx.bidding.service;
 
 import com.vaultx.bidding.dto.event.AuctionEndedEvent;
+import com.vaultx.bidding.metrics.BiddingMetrics;
 import com.vaultx.bidding.model.Auction;
 import com.vaultx.bidding.model.Bid;
 import com.vaultx.bidding.model.OutboxEvent;
@@ -15,9 +16,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -29,6 +32,7 @@ public class AuctionScheduler {
     private final BidRepository bidRepository;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final BiddingMetrics biddingMetrics;
 
     @Scheduled(fixedRate = 30000)
     @Transactional
@@ -68,6 +72,7 @@ public class AuctionScheduler {
             auction.setStatus(status);
             auctionRepository.save(auction);
             log.info("Auction {} ended with status {}", auction.getId(), status);
+            biddingMetrics.recordAuctionEnded(status);
 
             UUID winnerId = null;
             if ("SOLD".equals(status)) {
@@ -107,8 +112,12 @@ public class AuctionScheduler {
     private void emitAuctionLostEvents(Auction auction, AuctionEndedEvent payload,
                                        UUID winnerId) throws JsonProcessingException {
         List<Bid> allBids = bidRepository.findByAuctionIdOrderByCreatedAtDesc(auction.getId());
+        Set<UUID> notifiedBidders = new HashSet<>();
         for (Bid bid : allBids) {
             if (winnerId != null && bid.getBidderId().equals(winnerId)) {
+                continue;
+            }
+            if (!notifiedBidders.add(bid.getBidderId())) {
                 continue;
             }
             OutboxEvent lost = new OutboxEvent();

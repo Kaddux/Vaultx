@@ -111,7 +111,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=admin_user
       - SPRING_DATASOURCE_PASSWORD=password
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
-      - SPRING_SQL_INIT_MODE=always
+      - SPRING_SQL_INIT_MODE=never
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - GRPC_USER_SERVICE_HOST=user-service
     depends_on:
@@ -152,7 +152,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=admin_user
       - SPRING_DATASOURCE_PASSWORD=password
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
-      - SPRING_SQL_INIT_MODE=always
+      - SPRING_SQL_INIT_MODE=never
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - GRPC_USER_SERVICE_HOST=user-service
       - GRPC_BIDDING_SERVICE_HOST=bidding-service
@@ -186,8 +186,65 @@ services:
       user-service:
         condition: service_started
 
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - USER_SERVICE_URI=http://user-service:8000
+      - BIDDING_SERVICE_URI=http://bidding-service:8001
+      - TRANSACTION_SERVICE_URI=http://transaction-service:8002
+      - NOTIFICATION_SERVICE_URI=http://notification-service:8003
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+    depends_on:
+      user-service:
+        condition: service_started
+      bidding-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zipkin:
+    image: openzipkin/zipkin:3.4
+    ports:
+      - "9411:9411"
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+
 volumes:
   user-db-data:
   bid-db-data:
   tx-db-data:
   notification-db-data:
+  prometheus-data:
+  grafana-data:

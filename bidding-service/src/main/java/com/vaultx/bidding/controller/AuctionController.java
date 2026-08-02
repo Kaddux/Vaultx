@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
@@ -23,8 +24,9 @@ public class AuctionController {
     private final BidService bidService;
 
     @PostMapping
-    public ResponseEntity<AuctionResponse> create(@Valid @RequestBody AuctionRequest request) {
-        UUID sellerId = UUID.randomUUID();
+    public ResponseEntity<AuctionResponse> create(
+            @AuthenticationPrincipal UUID sellerId,
+            @Valid @RequestBody AuctionRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(auctionService.create(request, sellerId));
     }
@@ -42,9 +44,9 @@ public class AuctionController {
 
     @PostMapping("/{id}/bids")
     public ResponseEntity<BidResponse> placeBid(
+            @AuthenticationPrincipal UUID bidderId,
             @PathVariable UUID id,
             @Valid @RequestBody BidRequest request) {
-        UUID bidderId = UUID.randomUUID();
         return ResponseEntity.ok(bidService.placeBid(id, bidderId, request));
     }
 
@@ -54,8 +56,9 @@ public class AuctionController {
     }
 
     @GetMapping("/{id}/bids/mine")
-    public ResponseEntity<List<BidResponse>> getMyBids(@PathVariable UUID id) {
-        UUID bidderId = UUID.randomUUID();
+    public ResponseEntity<List<BidResponse>> getMyBids(
+            @AuthenticationPrincipal UUID bidderId,
+            @PathVariable UUID id) {
         return ResponseEntity.ok(bidService.getMyBids(id, bidderId));
     }
 }

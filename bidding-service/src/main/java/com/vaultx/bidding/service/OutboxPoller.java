@@ -40,21 +40,15 @@ public class OutboxPoller {
                 String topic = mapEventTypeToTopic(event.getEventType());
 
                 kafkaTemplate.send(topic, event.getAggregateId(), deserializePayload(event))
-                        .whenComplete((result, ex) -> {
-                            if (ex == null) {
-                                event.setPublished(true);
-                                event.setPublishedAt(LocalDateTime.now());
-                                outboxEventRepository.save(event);
-                                log.debug("Published {} to {} (offset={})",
-                                        event.getEventType(), topic,
-                                        result.getRecordMetadata().offset());
-                            } else {
-                                log.error("Failed to publish {} (event id={}) to {}: {}",
-                                        event.getEventType(), event.getId(), topic, ex.getMessage());
-                            }
-                        });
+                        .get(10, java.util.concurrent.TimeUnit.SECONDS);
+
+                event.setPublished(true);
+                event.setPublishedAt(LocalDateTime.now());
+                outboxEventRepository.save(event);
+                log.debug("Published {} to {}", event.getEventType(), topic);
             } catch (Exception e) {
-                log.error("Error processing outbox event {}: {}", event.getId(), e.getMessage());
+                log.error("Failed to publish {} (event id={}): {}", event.getEventType(),
+                        event.getId(), e.getMessage());
             }
         }
     }
