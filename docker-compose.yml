@@ -178,6 +178,11 @@ services:
       - SPRING_SQL_INIT_MODE=never
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - GRPC_USER_SERVICE_HOST=user-service
+      - MAIL_HOST=${MAIL_HOST:-smtp.gmail.com}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_FROM=${MAIL_FROM:-no-reply@vaultx.com}
     depends_on:
       notification-db:
         condition: service_healthy
