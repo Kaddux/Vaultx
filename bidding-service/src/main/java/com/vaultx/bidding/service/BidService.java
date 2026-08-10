@@ -2,6 +2,7 @@ package com.vaultx.bidding.service;
 
 import com.vaultx.bidding.dto.BidRequest;
 import com.vaultx.bidding.dto.BidResponse;
+import com.vaultx.bidding.dto.MyBidResponse;
 import com.vaultx.bidding.dto.event.BidPlacedEvent;
 import com.vaultx.bidding.grpc.UserGrpcClient;
 import com.vaultx.bidding.metrics.BiddingMetrics;
@@ -22,7 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -136,6 +139,39 @@ public class BidService {
         Auction auction = auctionRepository.findById(auctionId).orElse(null);
         return bidRepository.findByAuctionIdAndBidderIdOrderByCreatedAtDesc(auctionId, bidderId)
                 .stream().map(b -> toResponse(b, auction)).toList();
+    }
+
+    public List<MyBidResponse> getMyBidsAcrossAuctions(UUID bidderId) {
+        List<Bid> bids = bidRepository.findByBidderIdOrderByCreatedAtDesc(bidderId);
+        Map<UUID, Auction> auctions = loadAuctions(bids);
+        return bids.stream().map(b -> toMyBidResponse(b, auctions.get(b.getAuctionId()))).toList();
+    }
+
+    private Map<UUID, Auction> loadAuctions(List<Bid> bids) {
+        List<UUID> auctionIds = bids.stream()
+                .map(Bid::getAuctionId)
+                .distinct()
+                .toList();
+        return auctionIds.isEmpty()
+                ? Map.of()
+                : auctionRepository.findAllById(auctionIds).stream()
+                        .collect(Collectors.toMap(Auction::getId, a -> a));
+    }
+
+    private MyBidResponse toMyBidResponse(Bid bid, Auction auction) {
+        MyBidResponse r = new MyBidResponse();
+        r.setBidId(bid.getId());
+        r.setAuctionId(bid.getAuctionId());
+        if (auction != null) {
+            r.setAuctionTitle(auction.getTitle());
+            r.setAuctionStatus(auction.getStatus());
+            r.setCurrentBid(auction.getCurrentBid());
+            r.setEndTime(auction.getEndTime());
+        }
+        r.setMyBidAmount(bid.getAmount());
+        r.setMyStatus(bid.getStatus());
+        r.setCreatedAt(bid.getCreatedAt());
+        return r;
     }
 
     private BidResponse toResponse(Bid bid, Auction auction) {

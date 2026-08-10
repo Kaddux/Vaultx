@@ -5,6 +5,7 @@ import com.vaultx.bidding.dto.AuctionRequest;
 import com.vaultx.bidding.dto.AuctionResponse;
 import com.vaultx.bidding.dto.BidRequest;
 import com.vaultx.bidding.dto.BidResponse;
+import com.vaultx.bidding.dto.MyBidResponse;
 import com.vaultx.bidding.security.JwtAuthenticationFilter;
 import com.vaultx.bidding.security.JwtTokenProvider;
 import com.vaultx.bidding.service.AuctionService;
@@ -27,6 +28,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -95,7 +97,7 @@ class AuctionControllerTest {
     void getAllAuctions_ShouldReturn200() throws Exception {
         AuctionResponse response = buildAuctionResponse();
 
-        when(auctionService.getAll(null))
+        when(auctionService.getAll(null, null))
                 .thenReturn(List.of(response));
 
         mockMvc.perform(get("/api/auctions"))
@@ -109,13 +111,41 @@ class AuctionControllerTest {
         AuctionResponse response = buildAuctionResponse();
         response.setStatus("ACTIVE");
 
-        when(auctionService.getAll(eq("ACTIVE")))
+        when(auctionService.getAll(eq("ACTIVE"), isNull()))
                 .thenReturn(List.of(response));
 
         mockMvc.perform(get("/api/auctions")
                         .param("status", "ACTIVE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
+    @Test
+    void getAllAuctions_WithSellerIdParam_ShouldCallGetAllWithSellerId() throws Exception {
+        UUID sellerId = UUID.randomUUID();
+        AuctionResponse response = buildAuctionResponse();
+
+        when(auctionService.getAll(isNull(), eq(sellerId)))
+                .thenReturn(List.of(response));
+
+        mockMvc.perform(get("/api/auctions")
+                        .param("sellerId", sellerId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].sellerId").value(response.getSellerId().toString()));
+    }
+
+    @Test
+    void getMyBidsAcrossAuctions_ShouldReturn200() throws Exception {
+        MyBidResponse response = buildMyBidResponse();
+
+        when(bidService.getMyBidsAcrossAuctions(any(UUID.class)))
+                .thenReturn(List.of(response));
+
+        mockMvc.perform(get("/api/auctions/bids/mine"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].bidId").value(response.getBidId().toString()))
+                .andExpect(jsonPath("$[0].auctionId").value(response.getAuctionId().toString()))
+                .andExpect(jsonPath("$[0].myStatus").value(response.getMyStatus()));
     }
 
     @Test
@@ -241,6 +271,20 @@ class AuctionControllerTest {
         request.setMaxAutoBid(new BigDecimal("300.00"));
         request.setIdempotencyKey("idem-" + UUID.randomUUID());
         return request;
+    }
+
+    private MyBidResponse buildMyBidResponse() {
+        MyBidResponse response = new MyBidResponse();
+        response.setBidId(UUID.randomUUID());
+        response.setAuctionId(UUID.randomUUID());
+        response.setAuctionTitle("Test Auction");
+        response.setAuctionStatus("ACTIVE");
+        response.setCurrentBid(new BigDecimal("150.00"));
+        response.setEndTime(LocalDateTime.now().plusHours(1));
+        response.setMyBidAmount(new BigDecimal("150.00"));
+        response.setMyStatus("WINNING");
+        response.setCreatedAt(LocalDateTime.now());
+        return response;
     }
 
     private BidResponse buildBidResponse(UUID auctionId) {

@@ -29,13 +29,10 @@ public class TransactionServiceGrpcImpl
             PaymentStatus.Builder builder = PaymentStatus.newBuilder()
                     .setStatus("NOT_FOUND");
 
-            if (escrow.isPresent()) {
-                Escrow e = escrow.get();
-                builder.setPaymentIntentId(e.getId().toString())
-                        .setStatus(e.getStatus())
-                        .setAmount(e.getAmount().doubleValue())
-                        .setCurrency("USD");
-            }
+            escrow.ifPresent(e -> builder.setPaymentIntentId(e.getId().toString())
+                    .setStatus(e.getStatus())
+                    .setAmount(e.getAmount().doubleValue())
+                    .setCurrency("USD"));
 
             responseObserver.onNext(builder.build());
             responseObserver.onCompleted();

@@ -38,6 +38,22 @@ spring:
           filters:
             - JwtAuth
 
+        - id: bidding-service-my-bids
+          uri: ${BIDDING_SERVICE_URI:http://bidding-service:8001}
+          predicates:
+            - Method=GET
+            - Path=/api/auctions/bids/mine
+          filters:
+            - JwtAuth
+
+        - id: bidding-service-watchlist
+          uri: ${BIDDING_SERVICE_URI:http://bidding-service:8001}
+          predicates:
+            - Method=GET
+            - Path=/api/watchlist
+          filters:
+            - JwtAuth
+
         - id: bidding-service-public
           uri: ${BIDDING_SERVICE_URI:http://bidding-service:8001}
           predicates:

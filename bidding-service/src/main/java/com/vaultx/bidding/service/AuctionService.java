@@ -71,9 +71,21 @@ public class AuctionService {
     }
 
     public List<AuctionResponse> getAll(String statusFilter) {
-        List<Auction> auctions = (statusFilter != null && !statusFilter.isBlank())
-                ? auctionRepository.findByStatus(statusFilter.toUpperCase())
-                : auctionRepository.findAll();
+        return getAll(statusFilter, null);
+    }
+
+    public List<AuctionResponse> getAll(String statusFilter, UUID sellerId) {
+        boolean hasStatus = statusFilter != null && !statusFilter.isBlank();
+        List<Auction> auctions;
+        if (sellerId != null && hasStatus) {
+            auctions = auctionRepository.findBySellerIdAndStatus(sellerId, statusFilter.toUpperCase());
+        } else if (sellerId != null) {
+            auctions = auctionRepository.findBySellerId(sellerId);
+        } else if (hasStatus) {
+            auctions = auctionRepository.findByStatus(statusFilter.toUpperCase());
+        } else {
+            auctions = auctionRepository.findAll();
+        }
         return auctions.stream().map(this::toResponse).toList();
     }
 

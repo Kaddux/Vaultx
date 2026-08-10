@@ -19,6 +19,8 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
 
     List<Bid> findByAuctionIdAndBidderIdOrderByCreatedAtDesc(UUID auctionId, UUID bidderId);
 
+    List<Bid> findByBidderIdOrderByCreatedAtDesc(UUID bidderId);
+
     @Modifying
     @Query("UPDATE Bid b SET b.status = 'OUTBID' WHERE b.auctionId = :auctionId AND b.status = 'WINNING'")
     int markOutbidByAuction(@Param("auctionId") UUID auctionId);

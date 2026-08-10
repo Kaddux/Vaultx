@@ -4,6 +4,7 @@ import com.vaultx.bidding.dto.AuctionRequest;
 import com.vaultx.bidding.dto.AuctionResponse;
 import com.vaultx.bidding.dto.BidRequest;
 import com.vaultx.bidding.dto.BidResponse;
+import com.vaultx.bidding.dto.MyBidResponse;
 import com.vaultx.bidding.service.AuctionService;
 import com.vaultx.bidding.service.BidService;
 import jakarta.validation.Valid;
@@ -33,8 +34,15 @@ public class AuctionController {
 
     @GetMapping
     public ResponseEntity<List<AuctionResponse>> getAll(
-            @RequestParam(required = false) String status) {
-        return ResponseEntity.ok(auctionService.getAll(status));
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) UUID sellerId) {
+        return ResponseEntity.ok(auctionService.getAll(status, sellerId));
+    }
+
+    @GetMapping("/bids/mine")
+    public ResponseEntity<List<MyBidResponse>> getMyBidsAcrossAuctions(
+            @AuthenticationPrincipal UUID bidderId) {
+        return ResponseEntity.ok(bidService.getMyBidsAcrossAuctions(bidderId));
     }
 
     @GetMapping("/{id}")

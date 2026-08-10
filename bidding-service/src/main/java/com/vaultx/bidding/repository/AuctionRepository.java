@@ -24,4 +24,8 @@ public interface AuctionRepository extends JpaRepository<Auction, UUID> {
     @Lock(LockModeType.OPTIMISTIC)
     @Query("SELECT a FROM Auction a WHERE a.id = :id")
     Optional<Auction> findByIdWithLock(@Param("id") UUID id);
+
+    List<Auction> findBySellerId(UUID id);
+
+    List<Auction> findBySellerIdAndStatus(UUID sellerId, String status);
 }

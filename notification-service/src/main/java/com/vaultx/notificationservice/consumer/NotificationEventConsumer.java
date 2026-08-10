@@ -9,6 +9,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -27,9 +28,9 @@ public class NotificationEventConsumer {
             },
             containerFactory = "kafkaListenerContainerFactory"
     )
-    public void consume(String key,
+    public void consume(@Header(KafkaHeaders.RECEIVED_KEY) String key,
                         @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
-                        String payload,
+                        @Payload String payload,
                         Acknowledgment acknowledgment) {
         try {
             JsonNode node = objectMapper.readTree(payload);
