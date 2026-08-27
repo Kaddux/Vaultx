@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { TopNav } from '../components/TopNav';
-import { MOCK_USER, MOCK_TRANSACTIONS, Transaction, formatCurrency, formatDate, saveState } from '../api';
+import {
+  api,
+  mapTransaction,
+  Transaction,
+  formatCurrency,
+  formatDate,
+  ApiError,
+  WalletResponse,
+} from '../api';
+import { useAuth } from '../context/AuthContext';
 
-type KycState = 'PENDING' | 'VERIFIED' | 'REJECTED';
+type KycState = 'PENDING' | 'VERIFIED' | 'UNVERIFIED';
 
 function TransactionTypePill({ type }: { type: Transaction['type'] }) {
   const configs: Record<Transaction['type'], { cls: string; label: string }> = {
@@ -24,72 +32,96 @@ function StatusPill({ status }: { status: Transaction['status'] }) {
 }
 
 export function Wallet() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    const isLoggedIn = localStorage.getItem('vaultx_logged_in') === 'true';
-    if (!isLoggedIn) {
-      navigate('/login');
-    }
-  }, [navigate]);
+  const { user, refresh } = useAuth();
 
-  const user = MOCK_USER;
-  const [balance, setBalance] = useState(user.balance);
+  const [wallet, setWallet] = useState<WalletResponse | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [depositAmount, setDepositAmount] = useState('');
   const [depositing, setDepositing] = useState(false);
   const [depositSuccess, setDepositSuccess] = useState(false);
+  const [depositError, setDepositError] = useState('');
 
-  // KYC States
-  const [kycStatus, setKycStatus] = useState<typeof user.kycStatus>(user.kycStatus || 'UNVERIFIED');
-  const [kycStep, setKycStep] = useState(1); // 1: Personal Info, 2: Document Upload, 3: Selfie Match, 4: Scanner Simulation
+  const kycStatus = (user?.kycStatus ?? 'UNVERIFIED') as KycState;
+  const [kycStep, setKycStep] = useState(1);
   const [docType, setDocType] = useState('Passport');
-  const [fullName, setFullName] = useState(user.fullName);
-  const [dob, setDob] = useState('1990-01-01');
-  const [address, setAddress] = useState('123 Bidding Ave, Austin, TX');
+  const [fullName, setFullName] = useState(user?.fullName ?? '');
+  const [address, setAddress] = useState('');
   const [uploadedDoc, setUploadedDoc] = useState<string | null>(null);
   const [uploadedSelfie, setUploadedSelfie] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStatusMsg, setScanStatusMsg] = useState('');
+  const [kycError, setKycError] = useState('');
 
-  const handleDeposit = (e: React.FormEvent) => {
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.wallet.get(), api.transactions.list()])
+      .then(([w, txns]) => {
+        if (cancelled) return;
+        setWallet(w);
+        setTransactions(txns.map(mapTransaction));
+      })
+      .catch(() => {
+        // context refresh will surface auth errors
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Stripe Checkout redirects here with ?session_id=cs_... — confirm & refresh.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sid = params.get('session_id');
+    if (!sid) return;
+    api.payments
+      .confirm(sid)
+      .then(() =>
+        Promise.all([api.wallet.get(), api.transactions.list()]).then(([w, txns]) => {
+          setWallet(w);
+          setTransactions(txns.map(mapTransaction));
+        })
+      )
+      .catch(() => {});
+    window.history.replaceState({}, '', '/wallet');
+  }, [refresh]);
+
+  const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(depositAmount);
     if (!depositAmount || amount <= 0) return;
+    setDepositError('');
     setDepositing(true);
-    setTimeout(() => {
-      setDepositing(false);
+    try {
+      const updated = await api.wallet.deposit(amount, crypto.randomUUID());
+      setWallet(updated);
       setDepositSuccess(true);
-
-      // Mutate mock data and persist
-      MOCK_USER.balance += amount;
-      const newTxn: Transaction = {
-        id: `txn_dep_${Date.now()}`,
-        date: new Date(),
-        type: 'DEPOSIT',
-        amount: amount,
-        status: 'COMPLETED',
-        description: 'Bank transfer deposit',
-      };
-      MOCK_TRANSACTIONS.unshift(newTxn);
-      saveState();
-
-      // Update state for re-render
-      setBalance(MOCK_USER.balance);
-
-      setTimeout(() => setDepositSuccess(false), 3000);
       setDepositAmount('');
-    }, 1000);
+      await refresh();
+      const txns = await api.transactions.list();
+      setTransactions(txns.map(mapTransaction));
+      setTimeout(() => setDepositSuccess(false), 3000);
+    } catch (err) {
+      setDepositError(err instanceof Error ? err.message : 'Deposit failed');
+    } finally {
+      setDepositing(false);
+    }
   };
 
   const startVerificationScan = () => {
     setKycStep(4);
     setScanProgress(0);
     setScanStatusMsg('Scanning document layout...');
-    
+
     let currentProgress = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       currentProgress += 5;
       setScanProgress(currentProgress);
-      
+
       if (currentProgress <= 30) {
         setScanStatusMsg('Scanning document layout...');
       } else if (currentProgress <= 65) {
@@ -98,50 +130,39 @@ export function Wallet() {
         setScanStatusMsg('Running face biometric match...');
       } else {
         clearInterval(interval);
-        setScanStatusMsg('Verification submitted!');
-        
-        // Mutate global data and persist as PENDING
-        MOCK_USER.kycStatus = 'PENDING';
-        saveState();
-        setKycStatus('PENDING');
+        setScanStatusMsg('Submitting verification...');
+        try {
+          await api.users.submitKyc({
+            docType,
+            fullName,
+            address,
+            documentRef: uploadedDoc ?? undefined,
+            selfieRef: uploadedSelfie ?? undefined,
+          });
+          await refresh();
+          setScanStatusMsg('Verification submitted!');
+        } catch (err) {
+          setKycError(err instanceof ApiError ? err.message : 'KYC submission failed');
+          setScanStatusMsg('Submission failed');
+        }
       }
     }, 150);
   };
 
-  const demoApproveKyc = () => {
-    MOCK_USER.kycStatus = 'VERIFIED';
-    saveState();
-    setKycStatus('VERIFIED');
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg-base">
+        <TopNav />
+        <main className="pt-16 flex items-center justify-center min-h-[60vh]">
+          <span className="text-text-muted text-sm">Loading wallet…</span>
+        </main>
+      </div>
+    );
+  }
 
-  const demoRejectKyc = () => {
-    MOCK_USER.kycStatus = 'UNVERIFIED'; // Show REJECTED state
-    saveState();
-    // We can also simulate REJECTED state. Let's make it REJECTED!
-    // Since kycStatus type has 'VERIFIED' | 'PENDING' | 'UNVERIFIED' or 'REJECTED'?
-    // Wait, let's check AuthResponse kycStatus type in api.ts:
-    // kycStatus: 'VERIFIED' | 'PENDING' | 'UNVERIFIED';
-    // Oh! The type is 'VERIFIED' | 'PENDING' | 'UNVERIFIED'.
-    // If the user wants a REJECTED state, let's check if the type can be updated or if we can use UNVERIFIED to represent a retry state.
-    // Yes! Let's update kycStatus type in api.ts to include 'REJECTED' or use UNVERIFIED.
-    // Let's use UNVERIFIED for safety, or we can check if it supports REJECTED.
-    // Wait! Let's check api.ts line 13:
-    // kycStatus: 'VERIFIED' | 'PENDING' | 'UNVERIFIED';
-    // Let's keep it clean: we can define the local UI state to support 'REJECTED' so that the user sees the rejected alert screen!
-    MOCK_USER.kycStatus = 'UNVERIFIED';
-    saveState();
-    setKycStatus('UNVERIFIED');
-    setKycStep(1);
-  };
-
-  const resetKyc = () => {
-    MOCK_USER.kycStatus = 'UNVERIFIED';
-    saveState();
-    setKycStatus('UNVERIFIED');
-    setKycStep(1);
-    setUploadedDoc(null);
-    setUploadedSelfie(null);
-  };
+  const balance = wallet?.balance ?? 0;
+  const reservedBalance = wallet?.reservedBalance ?? 0;
+  const availableBalance = wallet?.availableBalance ?? 0;
 
   return (
     <div className="min-h-screen bg-bg-base">
@@ -162,23 +183,21 @@ export function Wallet() {
             <div className="card p-6 xl:col-span-1">
               <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">Account Balances</div>
               <div className="flex items-end gap-6">
-                {/* Available */}
                 <div className="flex-1">
                   <div className="text-xs text-text-secondary font-medium mb-1">Available</div>
                   <div className="text-3xl font-bold tabular-nums text-primary leading-none">
-                    {formatCurrency(balance)}
+                    {formatCurrency(availableBalance)}
                   </div>
                   <div className="text-xs text-text-muted mt-1">Ready to use</div>
                 </div>
                 <div className="w-px h-14 bg-border shrink-0" />
-                {/* Reserved */}
                 <div className="flex-1">
                   <div className="text-xs text-text-secondary font-medium mb-1 flex items-center gap-1">
                     <span className="material-symbols-outlined" style={{ fontSize: '13px' }}>lock</span>
                     Reserved
                   </div>
                   <div className="text-2xl font-semibold tabular-nums text-text-secondary leading-none">
-                    {formatCurrency(user.reservedBalance)}
+                    {formatCurrency(reservedBalance)}
                   </div>
                   <div className="text-xs text-text-muted mt-1">Locked in active bids</div>
                 </div>
@@ -186,7 +205,7 @@ export function Wallet() {
               <div className="mt-4 pt-4 border-t border-border">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-text-secondary">Total balance</span>
-                  <span className="font-bold tabular-nums">{formatCurrency(balance + user.reservedBalance)}</span>
+                  <span className="font-bold tabular-nums">{formatCurrency(balance)}</span>
                 </div>
               </div>
             </div>
@@ -198,7 +217,13 @@ export function Wallet() {
               {depositSuccess && (
                 <div className="mb-4 flex items-center gap-2 p-3 bg-success-light border border-success/20 rounded-lg text-sm text-success animate-fadeIn">
                   <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>check_circle</span>
-                  Deposit initiated successfully
+                  Deposit completed successfully
+                </div>
+              )}
+              {depositError && (
+                <div className="mb-4 flex items-start gap-2 p-3 bg-danger-light border border-danger/20 rounded-lg text-sm text-danger animate-fadeIn">
+                  <span className="material-symbols-outlined shrink-0" style={{ fontSize: '16px' }}>error</span>
+                  {depositError}
                 </div>
               )}
 
@@ -210,7 +235,7 @@ export function Wallet() {
                     <input
                       id="deposit-amount"
                       type="number"
-                      min="1"
+                      min="0.01"
                       step="0.01"
                       value={depositAmount}
                       onChange={(e) => setDepositAmount(e.target.value)}
@@ -253,7 +278,9 @@ export function Wallet() {
                   )}
                 </button>
               </form>
-            </div>            {/* KYC Panel */}
+            </div>
+
+            {/* KYC Panel */}
             <div className="card p-6 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-4 border-b border-border pb-2">
@@ -269,6 +296,12 @@ export function Wallet() {
                   )}
                 </div>
 
+                {kycError && (
+                  <div className="mb-4 p-3 bg-danger-light border border-danger/20 rounded-lg text-xs text-danger animate-fadeIn">
+                    {kycError}
+                  </div>
+                )}
+
                 {/* VERIFIED State */}
                 {kycStatus === 'VERIFIED' && (
                   <div className="flex flex-col items-center text-center py-6 gap-3">
@@ -279,50 +312,11 @@ export function Wallet() {
                       <div className="text-sm font-bold text-success">Identity verified</div>
                       <div className="text-xs text-text-secondary mt-0.5">Your account is fully verified and in good standing</div>
                     </div>
-                    
-                    <button
-                      onClick={resetKyc}
-                      className="btn-secondary text-xs py-1.5 px-3 mt-4"
-                    >
-                      Reset KYC (Test Flow)
-                    </button>
                   </div>
                 )}
 
-                {/* PENDING State */}
-                {kycStatus === 'PENDING' && (
-                  <div className="flex flex-col items-center text-center py-6 gap-3">
-                    <div className="w-14 h-14 rounded-full bg-warning-light flex items-center justify-center animate-pulse">
-                      <span className="material-symbols-outlined text-warning" style={{ fontSize: '30px' }}>pending_actions</span>
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-warning">Verification in progress</div>
-                      <div className="text-xs text-text-secondary mt-0.5">We're reviewing your documents — typically takes 1–2 business days</div>
-                    </div>
-
-                    {/* Developer test helpers */}
-                    <div className="mt-6 pt-4 border-t border-border w-full space-y-2">
-                      <p className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Demo Simulations</p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={demoApproveKyc}
-                          className="btn-primary text-xs py-1.5 flex-1 bg-success hover:bg-success/90 border-0"
-                        >
-                          Approve KYC
-                        </button>
-                        <button
-                          onClick={demoRejectKyc}
-                          className="btn-danger text-xs py-1.5 flex-1 bg-danger hover:bg-danger/90 border-0"
-                        >
-                          Reject KYC
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* UNVERIFIED State (Interactive Wizard) */}
-                {kycStatus === 'UNVERIFIED' && (
+                {/* PENDING + UNVERIFIED State (Interactive Wizard) */}
+                {kycStatus !== 'VERIFIED' && (
                   <div className="space-y-4">
                     {/* Progress Dots */}
                     <div className="flex items-center justify-center gap-1.5 mb-4">
@@ -505,7 +499,7 @@ export function Wallet() {
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <h2 className="text-base font-semibold text-text-primary">Transaction History</h2>
-              <span className="text-xs text-text-muted">{MOCK_TRANSACTIONS.length} transactions</span>
+              <span className="text-xs text-text-muted">{transactions.length} transactions</span>
             </div>
             <div className="overflow-x-auto">
               <table className="data-table">
@@ -520,20 +514,26 @@ export function Wallet() {
                   </tr>
                 </thead>
                 <tbody>
-                  {MOCK_TRANSACTIONS.map((tx) => (
-                    <tr key={tx.id}>
-                      <td className="text-text-secondary whitespace-nowrap">{formatDate(tx.date)}</td>
-                      <td>
-                        <span className="font-mono text-xs text-text-secondary">{tx.id}</span>
-                      </td>
-                      <td><TransactionTypePill type={tx.type} /></td>
-                      <td className={`text-right font-bold tabular-nums ${tx.amount < 0 ? 'text-danger' : 'text-success'}`}>
-                        {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
-                      </td>
-                      <td><StatusPill status={tx.status} /></td>
-                      <td className="text-text-secondary">{tx.description}</td>
+                  {transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-8 text-text-muted text-sm">No transactions yet.</td>
                     </tr>
-                  ))}
+                  ) : (
+                    transactions.map((tx) => (
+                      <tr key={tx.id}>
+                        <td className="text-text-secondary whitespace-nowrap">{formatDate(tx.date)}</td>
+                        <td>
+                          <span className="font-mono text-xs text-text-secondary">{tx.id}</span>
+                        </td>
+                        <td><TransactionTypePill type={tx.type} /></td>
+                        <td className={`text-right font-bold tabular-nums ${tx.amount < 0 ? 'text-danger' : 'text-success'}`}>
+                          {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
+                        </td>
+                        <td><StatusPill status={tx.status} /></td>
+                        <td className="text-text-secondary">{tx.description}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

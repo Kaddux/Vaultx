@@ -24,7 +24,7 @@ public class OutboxEvent {
     @Column(name = "event_type", nullable = false, length = 100)
     private String eventType;
 
-    @Column(nullable = false, columnDefinition = "JSONB")
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String payload;
 
     @Column(name = "created_at", nullable = false, updatable = false)

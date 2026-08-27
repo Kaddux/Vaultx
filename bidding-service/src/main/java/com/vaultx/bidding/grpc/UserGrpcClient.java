@@ -22,4 +22,17 @@ public class UserGrpcClient {
 
         return userServiceStub.getWalletBalance(request);
     }
+
+    public WalletResponse updateWallet(String userId, double amount, String transactionType,
+                                       String idempotencyKey, String description) {
+        UpdateWalletRequest request = UpdateWalletRequest.newBuilder()
+                .setUserId(userId)
+                .setAmount(amount)
+                .setTransactionType(transactionType)
+                .setIdempotencyKey(idempotencyKey)
+                .setDescription(description)
+                .build();
+
+        return userServiceStub.updateWallet(request);
+    }
 }

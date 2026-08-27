@@ -27,6 +27,13 @@ public class PaymentMetrics {
                 .increment();
     }
 
+    public void recordPaymentUnpaid() {
+        Counter.builder("vaultx.payments.unpaid")
+                .description("Total number of payments marked UNPAID for manual reconciliation")
+                .register(meterRegistry)
+                .increment();
+    }
+
     public void recordEscrowReleased() {
         Counter.builder("vaultx.escrows.released")
                 .description("Total number of escrows released")

@@ -4,6 +4,7 @@ import com.vaultx.userservice.model.Users;
 import com.vaultx.userservice.model.Wallet;
 import com.vaultx.userservice.repository.UserRepository;
 import com.vaultx.userservice.repository.WalletRepository;
+import com.vaultx.userservice.services.WalletService.WalletResult;
 import com.vaultx.user.grpc.*;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class UserServiceGrpc extends com.vaultx.user.grpc.UserServiceGrpc.UserSe
 
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
+    private final WalletService walletService;
 
     @Override
     public void getUserProfile(GetUserProfileRequest request,
@@ -69,26 +71,28 @@ public class UserServiceGrpc extends com.vaultx.user.grpc.UserServiceGrpc.UserSe
                     io.grpc.Status.NOT_FOUND.withDescription(e.getMessage()).asRuntimeException());
         }
     }
+
     @Override
     @Transactional
     public void updateWallet(UpdateWalletRequest request,
                              StreamObserver<com.vaultx.user.grpc.WalletResponse> responseObserver){
         try{
             UUID userId = UUID.fromString(request.getUserId());
-            Wallet wallet = walletRepository.findByUserId(userId)
-                    .orElseThrow(() -> new RuntimeException("Wallet not found: " + userId));
+            WalletResult result = walletService.walletMutation(
+                    userId,
+                    request.getTransactionType(),
+                    request.getAmount(),
+                    request.getIdempotencyKey(),
+                    request.getDescription());
 
-            BigDecimal amount = BigDecimal.valueOf(request.getAmount());
-            wallet.setBalance(wallet.getBalance().add(amount));
-            walletRepository.save(wallet);
-            // Wallet Response of grpc NOT Wallet entity
-            WalletResponse response = com.vaultx.user.grpc.WalletResponse.newBuilder()
-                    .setTransactionId(UUID.randomUUID().toString())
-                    .setNewBalance(wallet.getBalance().doubleValue())
-                    .setNewReservedBalance(wallet.getReserveBalance().doubleValue())
-                    .setStatus("COMPLETED")
-                    .setFailureReason("")
-                    .build();
+            com.vaultx.user.grpc.WalletResponse response =
+                    com.vaultx.user.grpc.WalletResponse.newBuilder()
+                            .setTransactionId(result.transactionId().toString())
+                            .setNewBalance(result.newBalance().doubleValue())
+                            .setNewReservedBalance(result.newReservedBalance().doubleValue())
+                            .setStatus(result.status())
+                            .setFailureReason(result.failureReason() == null ? "" : result.failureReason())
+                            .build();
 
             responseObserver.onNext(response);
             responseObserver.onCompleted();

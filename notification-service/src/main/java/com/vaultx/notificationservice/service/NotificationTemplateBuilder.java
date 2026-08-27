@@ -81,6 +81,12 @@ public class NotificationTemplateBuilder {
                     textOf(event, "message"),
                     List.of("EMAIL", "SMS", "PUSH"));
 
+            case "KYC_SUBMITTED" -> new Template(
+                    uuidOf(event, "userId"), eventType,
+                    "KYC Under Review",
+                    "We received your verification documents. Once approved, you can start bidding.",
+                    List.of("EMAIL", "PUSH"));
+
             default -> null;
         };
     }
@@ -97,6 +103,7 @@ public class NotificationTemplateBuilder {
             case "payment.completed" -> "PAYMENT_COMPLETED";
             case "payment.failed" -> "PAYMENT_FAILED";
             case "notification.requested" -> "NOTIFICATION_REQUESTED";
+            case "kyc.submitted" -> "KYC_SUBMITTED";
             default -> null;
         };
     }

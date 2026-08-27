@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MOCK_USER, saveState } from '../api';
+import { useAuth } from '../context/AuthContext';
+import { ApiError } from '../api';
 
 interface StrengthCheck {
   label: string;
@@ -16,6 +17,7 @@ const pwChecks: StrengthCheck[] = [
 
 export function Register() {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [form, setForm] = useState({ username: '', email: '', fullName: '', password: '' });
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,30 +29,28 @@ export function Register() {
     setForm((f) => ({ ...f, [field]: e.target.value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      if (form.email === 'taken@vaultx.io') {
-        setError('409: Email or username already taken.');
+    try {
+      await register({
+        username: form.username,
+        email: form.email,
+        fullName: form.fullName,
+        password: form.password,
+      });
+      setSuccess(true);
+      setShowKycModal(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError('Email or username already taken.');
       } else {
-        localStorage.setItem('vaultx_logged_in', 'true');
-        
-        // Update user state for demo
-        MOCK_USER.username = form.username;
-        MOCK_USER.fullName = form.fullName;
-        MOCK_USER.email = form.email;
-        MOCK_USER.kycStatus = 'UNVERIFIED';
-        MOCK_USER.balance = 0.00;
-        MOCK_USER.reservedBalance = 0.00;
-        saveState();
-
-        setSuccess(true);
-        setShowKycModal(true);
+        setError(err instanceof Error ? err.message : 'Unable to create account');
       }
-    }, 900);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const allPassed = pwChecks.every((c) => c.test(form.password));

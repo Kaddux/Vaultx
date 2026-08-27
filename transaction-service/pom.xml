@@ -73,6 +73,13 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Stripe (external payment simulation) -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>33.3.0</version>
+        </dependency>
+
         <!-- Test (already present, needs Testcontainers Kafka module) -->
         <dependency>
             <groupId>org.testcontainers</groupId>

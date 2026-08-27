@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopNav } from '../components/TopNav';
 import { CountdownTimer } from '../components/CountdownTimer';
-import { MOCK_AUCTIONS, Auction, formatCurrency } from '../api';
+import { api, mapAuction, Auction, formatCurrency } from '../api';
 
 type SortKey = 'price_asc' | 'price_desc' | 'ending_soon';
-type StatusFilter = 'ALL' | 'ACTIVE' | 'PENDING' | 'SOLD' | 'UNSOLD';
+type StatusFilter = 'ALL' | 'ACTIVE' | 'PENDING' | 'AWAITING_PAYMENT' | 'SOLD' | 'UNSOLD';
 
 // Category icon color placeholder
 function AuctionImagePlaceholder({ color, category }: { color: string; category: string }) {
@@ -37,7 +37,13 @@ function AuctionCard({ auction }: { auction: Auction }) {
 
   return (
     <div className="card-hover flex flex-col overflow-hidden group cursor-pointer" onClick={() => navigate(`/auction/${auction.id}`)}>
-      <AuctionImagePlaceholder color={auction.imageColor} category={auction.category} />
+      {auction.coverImageUrl ? (
+        <div className="w-full h-44 bg-black overflow-hidden rounded-t-lg">
+          <img src={auction.coverImageUrl} alt={auction.title} className="w-full h-full object-cover" />
+        </div>
+      ) : (
+        <AuctionImagePlaceholder color={auction.imageColor} category={auction.category} />
+      )}
 
       <div className="p-4 flex flex-col flex-1">
         {/* Title */}
@@ -66,6 +72,7 @@ function AuctionCard({ auction }: { auction: Auction }) {
           {auction.status === 'SOLD' && <span className="pill-green">SOLD</span>}
           {auction.status === 'UNSOLD' && <span className="pill-gray">UNSOLD</span>}
           {auction.status === 'PENDING' && <span className="pill-amber">PENDING</span>}
+          {auction.status === 'AWAITING_PAYMENT' && <span className="pill-amber">AWAITING PAYMENT</span>}
         </div>
 
         {/* Reserve met */}
@@ -109,12 +116,35 @@ function AuctionCard({ auction }: { auction: Auction }) {
 }
 
 export function Explore() {
+  const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [sort, setSort] = useState<SortKey>('ending_soon');
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.auctions
+      .list()
+      .then((data) => {
+        if (!cancelled) setAuctions(data.map(mapAuction));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load auctions');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filteredAuctions = useMemo(() => {
-    let list = [...MOCK_AUCTIONS];
+    let list = [...auctions];
 
     // Search
     if (search.trim()) {
@@ -135,7 +165,7 @@ export function Explore() {
     else if (sort === 'ending_soon') list.sort((a, b) => a.endsAt.getTime() - b.endsAt.getTime());
 
     return list;
-  }, [search, statusFilter, sort]);
+  }, [auctions, search, statusFilter, sort]);
 
   const sortButtons: { key: SortKey; label: string }[] = [
     { key: 'price_asc', label: 'Price: Low → High' },
@@ -183,6 +213,7 @@ export function Explore() {
                 <option value="ALL">All Status</option>
                 <option value="ACTIVE">Active</option>
                 <option value="PENDING">Pending</option>
+                <option value="AWAITING_PAYMENT">Awaiting Payment</option>
                 <option value="SOLD">Sold</option>
                 <option value="UNSOLD">Unsold</option>
               </select>
@@ -212,11 +243,18 @@ export function Explore() {
 
           {/* Results count */}
           <div className="text-sm text-text-secondary mb-4">
-            {filteredAuctions.length} {filteredAuctions.length === 1 ? 'auction' : 'auctions'} found
+            {loading ? 'Loading…' : `${filteredAuctions.length} ${filteredAuctions.length === 1 ? 'auction' : 'auctions'} found`}
           </div>
 
+          {/* Error */}
+          {error && (
+            <div className="mb-6 p-4 bg-danger-light border border-danger/20 rounded-lg text-sm text-danger">
+              {error}
+            </div>
+          )}
+
           {/* Grid */}
-          {filteredAuctions.length === 0 ? (
+          {!loading && filteredAuctions.length === 0 ? (
             <div className="text-center py-16 text-text-muted">
               <span className="material-symbols-outlined mb-3 block" style={{ fontSize: '48px' }}>search_off</span>
               <p className="font-medium">No auctions match your filters</p>

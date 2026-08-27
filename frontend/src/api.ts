@@ -1,16 +1,430 @@
 // ──────────────────────────────────────────────────────────────────────────────
-// api.ts — Shared types and mock data for Vaultx frontend
+// api.ts — Real API client for Vaultx frontend (replaces the mock layer)
+// Base URL: API Gateway via Vite proxy (/api → :8080) or VITE_API_BASE_URL
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ═══ Backend DTO types ════════════════════════════════════════════════════════
+
 export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  tokenType: string;
+}
+
+export interface UserResponse {
   id: string;
   username: string;
   email: string;
   fullName: string;
-  role: 'BUYER' | 'SELLER' | 'ADMIN';
+  phone: string | null;
+  kycStatus: string;
+  userRating: number;
+  role: string;
+  createdAt: string;
+}
+
+export interface WalletResponse {
+  id: string;
+  userId: string;
   balance: number;
   reservedBalance: number;
-  kycStatus: 'VERIFIED' | 'PENDING' | 'UNVERIFIED';
+  availableBalance: number;
+  currency: string;
+}
+
+export interface AuctionResponse {
+  id: string;
+  title: string;
+  description: string | null;
+  sellerId: string;
+  startingPrice: number;
+  reservePrice: number | null;
+  currentBid: number | null;
+  bidIncrement: number;
+  status: string;
+  startTime: string;
+  endTime: string;
+  extendedAt: string | null;
+  extensionPeriodSeconds: number;
+  currency: string;
+  createdAt: string;
+  coverMediaUrl: string | null;
+}
+
+export interface BidResponse {
+  id: string;
+  auctionId: string;
+  bidderId: string;
+  amount: number;
+  maxAutoBid: number | null;
+  autoBid: boolean;
+  status: string;
+  currentHighestBid: number | null;
+  currentWinner: boolean;
+  createdAt: string;
+}
+
+export interface MyBidResponse {
+  bidId: string;
+  auctionId: string;
+  auctionTitle: string;
+  auctionStatus: string;
+  currentBid: number | null;
+  endTime: string;
+  myBidAmount: number;
+  myStatus: string;
+  createdAt: string;
+}
+
+export interface WatchlistResponse {
+  id: string;
+  title: string;
+  status: string;
+  currentBid: number | null;
+  endTime: string;
+  sellerId: string;
+  watchedAt: string;
+}
+
+export interface TransactionResponse {
+  id: string;
+  userId: string;
+  auctionId: string | null;
+  type: string;
+  amount: number;
+  currency: string;
+  status: string;
+  description: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface NotificationResponse {
+  id: string;
+  eventType: string;
+  channel: string;
+  title: string;
+  message: string;
+  status: string;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+export interface PaymentStatus {
+  auctionId: string;
+  status: string;
+  amount: number;
+  buyerId: string;
+  sellerId: string;
+  createdAt?: string;
+  walletDebited?: boolean;
+  shortfall?: string | null;
+}
+
+export interface AuctionCreateRequest {
+  title: string;
+  description?: string;
+  startingPrice: number;
+  reservePrice?: number;
+  bidIncrement: number;
+  startTime: string;
+  endTime: string;
+  extensionPeriodSeconds?: number;
+  currency?: string;
+}
+
+export interface AuctionMedia {
+  id: string;
+  auctionId: string;
+  mediaType: 'IMAGE' | 'VIDEO';
+  contentType: string;
+  sizeBytes: number;
+  url: string;
+  cover: boolean;
+  sortOrder: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface MediaUploadRequest {
+  contentType: string;
+  fileName: string;
+  fileSizeBytes: number;
+}
+
+export interface PresignResponse {
+  mediaId: string;
+  auctionId: string;
+  mediaType: 'IMAGE' | 'VIDEO';
+  objectKey: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadUrl: string;
+  headers: Record<string, string>;
+  expiresInSeconds: number;
+}
+
+// ═══ Token storage ════════════════════════════════════════════════════════════
+
+const ACCESS_TOKEN_KEY = 'vaultx_access_token';
+const REFRESH_TOKEN_KEY = 'vaultx_refresh_token';
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+export function setTokens(accessToken: string, refreshToken: string) {
+  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+export function clearTokens() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+// ═══ HTTP client ══════════════════════════════════════════════════════════════
+
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ?? '';
+
+export class ApiError extends Error {
+  status: number;
+  error: string;
+  constructor(status: number, error: string, message: string) {
+    super(message);
+    this.status = status;
+    this.error = error;
+  }
+}
+
+let refreshPromise: Promise<string> | null = null;
+
+async function refreshAccessToken(): Promise<string> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) throw new ApiError(401, 'Unauthorized', 'No refresh token');
+  const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) throw new ApiError(401, 'Unauthorized', 'Refresh failed');
+  const data: AuthResponse = await res.json();
+  setTokens(data.accessToken, data.refreshToken);
+  return data.accessToken;
+}
+
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T;
+  const text = await response.text();
+  let body: any = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+  if (!response.ok) {
+    const error = body?.error ?? body?.message ?? 'Request Failed';
+    const message =
+      body?.message ??
+      body?.error ??
+      (typeof body === 'string' ? body : 'Something went wrong');
+    throw new ApiError(response.status, error, message);
+  }
+  return body as T;
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options.headers as Record<string, string>) ?? {}),
+  };
+  const token = getAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  if (response.status === 401 && token) {
+    try {
+      refreshPromise = refreshPromise ?? refreshAccessToken();
+      const newToken = await refreshPromise;
+      refreshPromise = null;
+      headers.Authorization = `Bearer ${newToken}`;
+      const retry = await fetch(`${API_BASE}${path}`, { ...options, headers });
+      return handleResponse<T>(retry);
+    } catch (err) {
+      refreshPromise = null;
+      clearTokens();
+      throw err instanceof ApiError ? err : new ApiError(401, 'Unauthorized', 'Session expired');
+    }
+  }
+
+  return handleResponse<T>(response);
+}
+
+function queryString(params?: Record<string, string | number | undefined>): string {
+  if (!params) return '';
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') search.set(k, String(v));
+  });
+  const s = search.toString();
+  return s ? `?${s}` : '';
+}
+
+// ═══ API functions ════════════════════════════════════════════════════════════
+
+export const api = {
+  auth: {
+    login: (email: string, password: string) =>
+      request<AuthResponse>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      }),
+    register: (dto: { username: string; email: string; password: string; fullName?: string }) =>
+      request<AuthResponse>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      }),
+  },
+  users: {
+    getMe: () => request<UserResponse>('/api/users/me'),
+    updateMe: (dto: { fullName?: string; phone?: string }) =>
+      request<UserResponse>('/api/users/me', { method: 'PATCH', body: JSON.stringify(dto) }),
+    deleteMe: () => request<void>('/api/users/me', { method: 'DELETE' }),
+    submitKyc: (dto: {
+      docType: string;
+      fullName: string;
+      address?: string;
+      documentRef?: string;
+      selfieRef?: string;
+    }) =>
+      request<UserResponse>('/api/users/me/kyc', {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      }),
+  },
+  wallet: {
+    get: () => request<WalletResponse>('/api/wallet'),
+    deposit: (amount: number, idempotencyKey: string) =>
+      request<WalletResponse>('/api/wallet/deposit', {
+        method: 'POST',
+        body: JSON.stringify({ amount, idempotencyKey }),
+      }),
+  },
+  auctions: {
+    list: (params?: { status?: string; sellerId?: string }) =>
+      request<AuctionResponse[]>(`/api/auctions${queryString(params)}`),
+    getById: (id: string) => request<AuctionResponse>(`/api/auctions/${id}`),
+    create: (dto: AuctionCreateRequest) =>
+      request<AuctionResponse>('/api/auctions', { method: 'POST', body: JSON.stringify(dto) }),
+    myBids: () => request<MyBidResponse[]>('/api/auctions/bids/mine'),
+    listMedia: (auctionId: string) => request<AuctionMedia[]>(`/api/auctions/${auctionId}/media`),
+    createUpload: (auctionId: string, dto: MediaUploadRequest) =>
+      request<PresignResponse>(`/api/auctions/${auctionId}/media`, {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      }),
+    completeUpload: (auctionId: string, mediaId: string) =>
+      request<AuctionMedia>(`/api/auctions/${auctionId}/media/${mediaId}/complete`, {
+        method: 'POST',
+      }),
+    setCover: (auctionId: string, mediaId: string) =>
+      request<AuctionMedia>(`/api/auctions/${auctionId}/media/${mediaId}/cover`, {
+        method: 'PUT',
+      }),
+    removeMedia: (auctionId: string, mediaId: string) =>
+      request<void>(`/api/auctions/${auctionId}/media/${mediaId}`, { method: 'DELETE' }),
+  },
+  bids: {
+    list: (auctionId: string) => request<BidResponse[]>(`/api/auctions/${auctionId}/bids`),
+    place: (auctionId: string, dto: { amount: number; maxAutoBid?: number; idempotencyKey: string }) =>
+      request<BidResponse>(`/api/auctions/${auctionId}/bids`, {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      }),
+    mine: (auctionId: string) => request<BidResponse[]>(`/api/auctions/${auctionId}/bids/mine`),
+  },
+  payments: {
+    getStatus: (auctionId: string) => request<PaymentStatus>(`/api/payments/${auctionId}`),
+    createSession: (auctionId: string) => request<{ url: string }>(`/api/payments/${auctionId}/session`),
+    confirm: (sessionId: string) =>
+      request<{ status: string }>('/api/payments/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+      }),
+    release: (auctionId: string) =>
+      request<{ status: string; auctionId: string }>('/api/payments/release', {
+        method: 'POST',
+        body: JSON.stringify({ auctionId }),
+      }),
+    refund: (auctionId: string) =>
+      request<{ status: string; auctionId: string }>('/api/payments/refund', {
+        method: 'POST',
+        body: JSON.stringify({ auctionId }),
+      }),
+  },
+  transactions: {
+    list: () => request<TransactionResponse[]>('/api/transactions'),
+  },
+  notifications: {
+    list: (page = 0, size = 20) =>
+      request<NotificationResponse[]>(`/api/notifications?page=${page}&size=${size}`),
+    unreadCount: () => request<{ unread: number }>('/api/notifications/unread-count'),
+    markRead: () => request<{ status: string }>('/api/notifications/read', { method: 'PUT' }),
+    updatePreference: (eventType: string, dto: { channel: string; enabled: boolean }) =>
+      request<{ status: string }>(`/api/notifications/preferences/${eventType}`, {
+        method: 'PUT',
+        body: JSON.stringify(dto),
+      }),
+  },
+  watchlist: {
+    list: () => request<WatchlistResponse[]>('/api/watchlist'),
+    add: (auctionId: string) =>
+      request<{ status: string; auctionId: string }>(`/api/auctions/${auctionId}/watchlist`, {
+        method: 'POST',
+      }),
+    remove: (auctionId: string) =>
+      request<void>(`/api/auctions/${auctionId}/watchlist`, { method: 'DELETE' }),
+  },
+};
+
+// ═══ Presigned upload (direct to object storage) ═════════════════════════════
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+export function mediaTypeOf(file: File): 'IMAGE' | 'VIDEO' {
+  return file.type.startsWith('video/') ? 'VIDEO' : 'IMAGE';
+}
+
+export function mediaSizeLimit(type: 'IMAGE' | 'VIDEO'): number {
+  return type === 'VIDEO' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+}
+
+/**
+ * Performs the direct-to-storage PUT once a presigned URL has been issued.
+ * No Authorization header is sent — the URL signature authorizes the request.
+ */
+export async function uploadToPresignedUrl(presign: PresignResponse, file: File): Promise<void> {
+  const res = await fetch(presign.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || presign.contentType },
+    body: file,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, 'UploadFailed', `Failed to upload media (${res.status})`);
+  }
+}
+
+// ═══ UI mapping helpers ═══════════════════════════════════════════════════════
+
+/** Backend serializes LocalDateTime as a naive ISO string representing UTC; parse as UTC. */
+export function toUtcDate(value: string): Date {
+  return new Date(value.endsWith('Z') || value.includes('+') ? value : `${value}Z`);
 }
 
 export interface SellerInfo {
@@ -29,10 +443,11 @@ export interface Auction {
   lotNumber: string;
   title: string;
   subtitle?: string;
-  description: string;            // rich HTML-ish description text
-  lotDescription: string[];       // paragraphs
-  specs: { label: string; value: string }[];  // bullet specs
+  description: string;
+  lotDescription: string[];
+  specs: { label: string; value: string }[];
   seller: string;
+  sellerId: string;
   sellerInfo: SellerInfo;
   category: string;
   subcategory?: string;
@@ -41,11 +456,13 @@ export interface Auction {
   bidIncrement: number;
   currentBid: number;
   totalBids: number;
-  status: 'ACTIVE' | 'PENDING' | 'SOLD' | 'UNSOLD';
+  status: 'ACTIVE' | 'PENDING' | 'AWAITING_PAYMENT' | 'SOLD' | 'UNSOLD';
   endsAt: Date;
-  imageColor: string;             // placeholder gradient bg color
-  imageAccent: string;            // icon to show in placeholder
-  imageCount: number;             // number of carousel images
+  imageColor: string;
+  imageAccent: string;
+  imageCount: number;
+  coverImageUrl?: string;
+  media?: AuctionMedia[];
   reserveMet: boolean;
   views: number;
   watchers: number;
@@ -70,446 +487,148 @@ export interface Transaction {
   description: string;
 }
 
-// ─── Mock current user ───────────────────────────────────────────────────────
-const storedUser = localStorage.getItem('vaultx_user');
-export const MOCK_USER: AuthResponse = storedUser ? JSON.parse(storedUser) : {
-  id: 'usr_8402',
-  username: 'alex_vault',
-  email: 'alex@vaultx.io',
-  fullName: 'Alex Morgan',
-  role: 'SELLER',
-  balance: 12_480.00,
-  reservedBalance: 3_200.00,
-  kycStatus: 'VERIFIED',
-};
-if (!storedUser) {
-  localStorage.setItem('vaultx_user', JSON.stringify(MOCK_USER));
-}
-
-// ─── Mock Auctions ───────────────────────────────────────────────────────────
-const now = new Date();
-const in90s = new Date(now.getTime() + 90 * 1000);
-const in5m  = new Date(now.getTime() + 5 * 60 * 1000);
-const in2h  = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-const in1d  = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-const SELLER_HERITAGE: SellerInfo = {
-  handle: 'heritage_horology',
-  displayName: 'Heritage Horology Ltd.',
-  avatarInitial: 'H',
-  rating: 4.85,
-  reviewCount: 342,
-  memberSince: '2019',
-  location: 'London, UK',
-  verified: true,
-};
-
-const SELLER_SPORTS: SellerInfo = {
-  handle: 'sports_memorabilia',
-  displayName: 'Sports Memorabilia Co.',
-  avatarInitial: 'S',
-  rating: 4.9,
-  reviewCount: 218,
-  memberSince: '2018',
-  location: 'New York, US',
-  verified: true,
-};
-
-const SELLER_ARTHAUS: SellerInfo = {
-  handle: 'arthaus_berlin',
-  displayName: 'Arthaus Berlin GmbH',
-  avatarInitial: 'A',
-  rating: 4.7,
-  reviewCount: 97,
-  memberSince: '2021',
-  location: 'Berlin, DE',
-  verified: true,
-};
-
-const SELLER_GUITAR: SellerInfo = {
-  handle: 'guitar_vault',
-  displayName: 'Guitar Vault Inc.',
-  avatarInitial: 'G',
-  rating: 4.8,
-  reviewCount: 156,
-  memberSince: '2020',
-  location: 'Nashville, US',
-  verified: true,
-};
-
-const SELLER_TECH: SellerInfo = {
-  handle: 'tech_resellers',
-  displayName: 'Tech Resellers LLC',
-  avatarInitial: 'T',
-  rating: 4.6,
-  reviewCount: 441,
-  memberSince: '2017',
-  location: 'San Francisco, US',
-  verified: false,
-};
-
-const SELLER_MAISON: SellerInfo = {
-  handle: 'maison_luxe',
-  displayName: 'Maison Luxe Paris',
-  avatarInitial: 'M',
-  rating: 4.95,
-  reviewCount: 503,
-  memberSince: '2016',
-  location: 'Paris, FR',
-  verified: true,
-};
-
-const DEFAULT_AUCTIONS: Auction[] = [
-  {
-    id: 'auc_001',
-    lotNumber: '8402',
-    title: '1952 Topps Mickey Mantle Baseball Card',
-    subtitle: 'PSA Grade 8 NM-MT — The Holy Grail of Baseball Cards',
-    description: 'Iconic post-war baseball card in exceptional condition.',
-    lotDescription: [
-      'This 1952 Topps Mickey Mantle #311 is widely regarded as the most iconic and valuable post-war baseball card ever produced. This example has been graded PSA 8 NM-MT, placing it among the finest known specimens in the hobby.',
-      'The card presents with brilliant original colors, sharp corners, and full gloss. The centering is outstanding at approximately 55/45 left-to-right and 55/45 top-to-bottom. There is no visible print defect, creasing, or surface wear visible to the naked eye.',
-      'Mickey Mantle\'s 1952 Topps card is the cornerstone of any serious collection — this is a once-in-a-generation opportunity to acquire one at the NM-MT level.',
-    ],
-    specs: [
-      { label: 'Grade', value: 'PSA 8 NM-MT' },
-      { label: 'Year', value: '1952' },
-      { label: 'Set', value: 'Topps #311' },
-      { label: 'Player', value: 'Mickey Mantle' },
-      { label: 'Team', value: 'New York Yankees' },
-      { label: 'Authentication', value: 'PSA/DNA certified' },
-    ],
-    seller: 'sports_memorabilia',
-    sellerInfo: SELLER_SPORTS,
-    category: 'Sports',
-    subcategory: 'Baseball Cards',
-    startingPrice: 5000,
-    reservePrice: 8000,
-    bidIncrement: 100,
-    currentBid: 9_400,
-    totalBids: 47,
-    status: 'ACTIVE',
-    endsAt: in90s,
-    imageColor: '#1a1f36',
-    imageAccent: 'sports_baseball',
-    imageCount: 4,
-    reserveMet: true,
-    views: 3_241,
-    watchers: 198,
-    payout: null,
-  },
-  {
-    id: 'auc_002',
-    lotNumber: '8403',
-    title: 'Rolex Submariner Date 126610LN',
-    subtitle: '2023 — Full Set with Box & Papers, Unworn',
-    description: '2023 Rolex Submariner in perfect condition with full original box and papers.',
-    lotDescription: [
-      'Presented here is a 2023 Rolex Submariner Date reference 126610LN in unworn, pristine condition. This example comes complete with its original Rolex box, all accompanying papers, hang tags, and the green warranty card registered in 2023.',
-      'The Submariner Date features the Oystersteel case and bracelet with Cerachrom bezel insert in black ceramic. The black dial features luminescent hour markers and Mercedes hands. Powered by Caliber 3235 with approximately 70-hour power reserve.',
-      'With the current grey market premium on new Rolexes, this represents excellent value for a sealed, unworn example with all documentation intact.',
-    ],
-    specs: [
-      { label: 'Reference', value: '126610LN' },
-      { label: 'Year', value: '2023' },
-      { label: 'Case Material', value: 'Oystersteel' },
-      { label: 'Movement', value: 'Cal. 3235 (Automatic)' },
-      { label: 'Water Resistance', value: '300m / 1,000ft' },
-      { label: 'Condition', value: 'Unworn, full set' },
-    ],
-    seller: 'luxury_watch_co',
-    sellerInfo: SELLER_HERITAGE,
-    category: 'Watches',
-    subcategory: 'Rolex',
-    startingPrice: 12000,
-    reservePrice: 14000,
-    bidIncrement: 250,
-    currentBid: 14_750,
-    totalBids: 32,
-    status: 'ACTIVE',
-    endsAt: in5m,
-    imageColor: '#0a3d2e',
-    imageAccent: 'watch',
-    imageCount: 6,
-    reserveMet: true,
-    views: 5_812,
-    watchers: 421,
-    payout: null,
-  },
-  {
-    id: 'auc_003',
-    lotNumber: '8404',
-    title: 'Vintage Fender Stratocaster 1962',
-    subtitle: '3-Tone Sunburst, All Original, OHSC',
-    description: 'All original, sunburst finish, lightweight body. Incredible tone and playability.',
-    lotDescription: [
-      'This exceptional 1962 Fender Stratocaster is a superb example of the pre-CBS golden era. The guitar features its original 3-tone sunburst finish which has aged to a beautiful, transparent amber in the lighter areas while the burst retains its warm red-to-black transition.',
-      'All electronics are completely original — original pickups, pots, selector switch, and output jack. The neck retains approximately 95% of its original frets. The original tuning machines are in excellent working order. This guitar has never been refinished or had any non-original parts installed.',
-      'Sold with its original brown hardshell case (OHSC) and original strap button. A truly time-capsule Strat that plays and sounds exactly as it should.',
-    ],
-    specs: [
-      { label: 'Year', value: '1962' },
-      { label: 'Finish', value: '3-Tone Sunburst (original)' },
-      { label: 'Body', value: 'Alder' },
-      { label: 'Neck', value: 'Maple with slab rosewood' },
-      { label: 'Pickups', value: 'All original single-coils' },
-      { label: 'Case', value: 'Original hardshell case (OHSC)' },
-    ],
-    seller: 'guitar_vault',
-    sellerInfo: SELLER_GUITAR,
-    category: 'Music',
-    subcategory: 'Vintage Guitars',
-    startingPrice: 18000,
-    reservePrice: 22000,
-    bidIncrement: 500,
-    currentBid: 19_500,
-    totalBids: 14,
-    status: 'ACTIVE',
-    endsAt: in2h,
-    imageColor: '#3d1a00',
-    imageAccent: 'music_note',
-    imageCount: 5,
-    reserveMet: false,
-    views: 1_904,
-    watchers: 156,
-    payout: null,
-  },
-  {
-    id: 'auc_004',
-    lotNumber: '8405',
-    title: 'Abstract Oil Painting — "Chromatic Drift"',
-    subtitle: 'Original Oil on Linen, 60×80cm, Signed & Authenticated',
-    description: 'Original oil on linen, 60x80cm, signed and authenticated. Contemporary artist.',
-    lotDescription: [
-      '"Chromatic Drift" is an original oil painting on Belgian linen canvas, 60×80cm, executed in 2024 by Berlin-based contemporary artist Marlene Kessler. The work is part of her "Fluid Architectures" series exploring tension between geometric structure and organic dissolution.',
-      'The painting is applied in multiple dense layers of oil, creating a relief-like texture with visible impasto technique. The palette transitions from deep cobalt and prussian blue through cadmium orange into raw umber — all archival-quality pigments guaranteed not to yellow.',
-      'Comes with a certificate of authenticity signed by the artist, provenance documentation, and is ready to hang with gallery-style hanging hardware installed.',
-    ],
-    specs: [
-      { label: 'Medium', value: 'Oil on Belgian linen' },
-      { label: 'Dimensions', value: '60 × 80 cm (unframed)' },
-      { label: 'Year', value: '2024' },
-      { label: 'Artist', value: 'Marlene Kessler' },
-      { label: 'Series', value: 'Fluid Architectures' },
-      { label: 'Includes', value: 'CoA, provenance docs, hanging hardware' },
-    ],
-    seller: 'arthaus_berlin',
-    sellerInfo: SELLER_ARTHAUS,
-    category: 'Art',
-    subcategory: 'Contemporary',
-    startingPrice: 1500,
-    reservePrice: 2000,
-    bidIncrement: 50,
-    currentBid: 2_200,
-    totalBids: 28,
-    status: 'ACTIVE',
-    endsAt: in1d,
-    imageColor: '#2d1a4a',
-    imageAccent: 'palette',
-    imageCount: 3,
-    reserveMet: true,
-    views: 987,
-    watchers: 73,
-    payout: null,
-  },
-  {
-    id: 'auc_005',
-    lotNumber: '8406',
-    title: 'Apple Mac Pro M2 Ultra — Studio Config',
-    subtitle: 'Sealed Box · 192GB RAM · 8TB SSD · Afterburner',
-    description: 'Brand new in sealed box. 192GB RAM, 8TB SSD, Afterburner card.',
-    lotDescription: [
-      'Brand new in original sealed Apple packaging — this is the top-spec Mac Pro with M2 Ultra chip. This configuration includes 192GB of unified memory and 8TB of SSD storage, alongside the optional Afterburner accelerator card for ProRes/RAW video acceleration.',
-      'Apple serial number and purchase receipt available for verification. The unit ships with all original accessories: 140W USB-C power adapter, Magic Mouse, Magic Keyboard with Touch ID and numeric keypad, and power cable for your region.',
-    ],
-    specs: [
-      { label: 'Chip', value: 'Apple M2 Ultra (24-core CPU, 76-core GPU)' },
-      { label: 'Memory', value: '192GB unified memory' },
-      { label: 'Storage', value: '8TB SSD' },
-      { label: 'Add-on', value: 'Afterburner accelerator card' },
-      { label: 'Condition', value: 'Brand new, sealed' },
-      { label: 'Warranty', value: 'Full Apple warranty remaining' },
-    ],
-    seller: 'tech_resellers',
-    sellerInfo: SELLER_TECH,
-    category: 'Technology',
-    subcategory: 'Apple',
-    startingPrice: 8000,
-    reservePrice: 9500,
-    bidIncrement: 200,
-    currentBid: 8_400,
-    totalBids: 11,
-    status: 'ACTIVE',
-    endsAt: in2h,
-    imageColor: '#1c1c1e',
-    imageAccent: 'computer',
-    imageCount: 3,
-    reserveMet: false,
-    views: 2_108,
-    watchers: 212,
-    payout: null,
-  },
-  {
-    id: 'auc_006',
-    lotNumber: '8407',
-    title: 'Hermès Birkin 30 — Togo Leather Gold',
-    subtitle: 'Gold Hardware · Pristine Condition · Full Hermès Set',
-    description: 'Pristine condition, authentic authentication papers, Hermès orange box included.',
-    lotDescription: [
-      'A pristine Hermès Birkin 30 in Togo leather with Gold hardware. Togo is the most sought-after Birkin leather for its scratch-resistant properties and the way it absorbs and retains the rich color. The Gold colorway is the most timeless and versatile of all Birkin colors.',
-      'This bag is accompanied by its full Hermès set: the iconic orange box with Hermès ribbon, dustbag, rain cape, lock, two keys, and clochette. All hardware functions perfectly. The bag shows no signs of wear — this is a true investment-grade piece.',
-    ],
-    specs: [
-      { label: 'Size', value: '30cm' },
-      { label: 'Leather', value: 'Togo (Gold color)' },
-      { label: 'Hardware', value: 'Gold-plated (GHW)' },
-      { label: 'Condition', value: 'Pristine, never carried' },
-      { label: 'Includes', value: 'Full Hermès set, box, dustbag, lock & keys' },
-      { label: 'Authentication', value: 'Hermès receipt & heat stamp visible' },
-    ],
-    seller: 'maison_luxe',
-    sellerInfo: SELLER_MAISON,
-    category: 'Fashion',
-    subcategory: 'Hermès',
-    startingPrice: 22000,
-    reservePrice: 28000,
-    bidIncrement: 500,
-    currentBid: 31_000,
-    totalBids: 63,
-    status: 'SOLD',
-    endsAt: new Date(now.getTime() - 60000),
-    imageColor: '#8b3a1a',
-    imageAccent: 'shopping_bag',
-    imageCount: 5,
-    reserveMet: true,
-    views: 8_904,
-    watchers: 634,
-    payout: 'RELEASED',
-  },
-];
-
-function reviveDates(key: string, value: any) {
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
-    return new Date(value);
+function hashId(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
   }
-  return value;
+  return Math.abs(hash);
 }
 
-const storedAuctions = localStorage.getItem('vaultx_auctions');
-export const MOCK_AUCTIONS: Auction[] = storedAuctions ? JSON.parse(storedAuctions, reviveDates) : DEFAULT_AUCTIONS;
-if (!storedAuctions) {
-  localStorage.setItem('vaultx_auctions', JSON.stringify(MOCK_AUCTIONS));
+function shortId(id: string): string {
+  return id.length > 12 ? id.slice(0, 6) : id;
 }
 
-const DEFAULT_BID_HISTORY: Bid[] = [
-  { id: 'b1', username: 'jade_collector', maskedUsername: 'j***e', isCurrentUser: false, amount: 9400, timestamp: new Date(now.getTime() - 5000) },
-  { id: 'b2', username: 'bidmaster99',    maskedUsername: 'b***9', isCurrentUser: false, amount: 9200, timestamp: new Date(now.getTime() - 18000) },
-  { id: 'b3', username: 'rare_finds',     maskedUsername: 'r***s', isCurrentUser: false, amount: 9000, timestamp: new Date(now.getTime() - 45000) },
-  { id: 'b4', username: 'alex_vault',     maskedUsername: 'a***t', isCurrentUser: true,  amount: 8800, timestamp: new Date(now.getTime() - 120000) },
-  { id: 'b5', username: 'sports_fan42',   maskedUsername: 's***2', isCurrentUser: false, amount: 8500, timestamp: new Date(now.getTime() - 300000) },
-  { id: 'b6', username: 'collector_pro',  maskedUsername: 'c***o', isCurrentUser: false, amount: 8200, timestamp: new Date(now.getTime() - 600000) },
-  { id: 'b7', username: 'bidder_x',       maskedUsername: 'b***x', isCurrentUser: false, amount: 7900, timestamp: new Date(now.getTime() - 1200000) },
-];
+const PALETTE = ['#1a1f36', '#0a3d2e', '#3d1a00', '#2d1a4a', '#1c1c1e', '#8b3a1a', '#173a5e'];
 
-const storedBids = localStorage.getItem('vaultx_bids');
-export const MOCK_BID_HISTORY: Bid[] = storedBids ? JSON.parse(storedBids, reviveDates) : DEFAULT_BID_HISTORY;
-if (!storedBids) {
-  localStorage.setItem('vaultx_bids', JSON.stringify(MOCK_BID_HISTORY));
-}
-
-const DEFAULT_TRANSACTIONS: Transaction[] = [
-  { id: 'txn_001', date: new Date(now.getTime() - 1 * 3600000),  type: 'DEPOSIT',         amount:  5000, status: 'COMPLETED', description: 'Bank transfer deposit' },
-  { id: 'txn_002', date: new Date(now.getTime() - 3 * 3600000),  type: 'ESCROW_HOLD',     amount: -3200, status: 'COMPLETED', description: 'Bid placed on Rolex Submariner' },
-  { id: 'txn_003', date: new Date(now.getTime() - 6 * 3600000),  type: 'ESCROW_RELEASE',  amount:  2500, status: 'COMPLETED', description: 'Outbid on Stratocaster auction' },
-  { id: 'txn_004', date: new Date(now.getTime() - 24 * 3600000), type: 'REFUND',          amount:  1500, status: 'COMPLETED', description: 'Auction cancelled by seller' },
-  { id: 'txn_005', date: new Date(now.getTime() - 48 * 3600000), type: 'DEPOSIT',         amount: 10000, status: 'PENDING',   description: 'Wire transfer pending verification' },
-  { id: 'txn_006', date: new Date(now.getTime() - 72 * 3600000), type: 'ESCROW_HOLD',     amount:  -800, status: 'FAILED',    description: 'Insufficient funds' },
-  { id: 'txn_007', date: new Date(now.getTime() - 96 * 3600000), type: 'DEPOSIT',         amount:  2000, status: 'COMPLETED', description: 'Card deposit' },
-];
-
-const storedTransactions = localStorage.getItem('vaultx_transactions');
-export const MOCK_TRANSACTIONS: Transaction[] = storedTransactions ? JSON.parse(storedTransactions, reviveDates) : DEFAULT_TRANSACTIONS;
-if (!storedTransactions) {
-  localStorage.setItem('vaultx_transactions', JSON.stringify(MOCK_TRANSACTIONS));
-}
-
-export const MOCK_SELLER_AUCTIONS = MOCK_AUCTIONS.filter((a) => a.seller === 'sports_memorabilia' || a.sellerInfo.handle === 'heritage_horology').concat([
-  {
-    id: 'sel_001',
-    lotNumber: '8410',
-    title: 'Signed Michael Jordan Jersey 1996',
-    subtitle: 'Bulls Championship Season, JSA Certified',
-    description: '',
-    lotDescription: [],
+export function mapAuction(a: AuctionResponse): Auction {
+  const reserveMet =
+    a.reservePrice != null && a.currentBid != null && a.currentBid >= a.reservePrice;
+  const hash = hashId(a.id);
+  return {
+    id: a.id,
+    lotNumber: String(1000 + (hash % 9000)),
+    title: a.title,
+    subtitle: a.description ? a.description.slice(0, 90) : undefined,
+    description: a.description ?? '',
+    lotDescription: a.description ? [a.description] : [],
     specs: [],
-    seller: 'alex_vault',
-    sellerInfo: { handle: 'alex_vault', displayName: 'Alex Morgan', avatarInitial: 'A', rating: 4.85, reviewCount: 48, memberSince: '2022', location: 'Austin, US', verified: true },
-    category: 'Sports',
-    subcategory: 'Basketball',
-    startingPrice: 3000,
-    reservePrice: 5000,
-    bidIncrement: 100,
-    currentBid: 6_200,
-    totalBids: 24,
-    status: 'ACTIVE' as const,
-    endsAt: in2h,
-    imageColor: '#1D4ED8',
-    imageAccent: 'sports_basketball',
-    imageCount: 3,
-    reserveMet: true,
-    views: 892,
-    watchers: 64,
-    payout: null,
-  },
-  {
-    id: 'sel_002',
-    lotNumber: '8411',
-    title: 'First Edition Pokémon Card Set',
-    subtitle: 'Base Set 1st Edition, PSA Graded',
-    description: '',
-    lotDescription: [],
-    specs: [],
-    seller: 'alex_vault',
-    sellerInfo: { handle: 'alex_vault', displayName: 'Alex Morgan', avatarInitial: 'A', rating: 4.85, reviewCount: 48, memberSince: '2022', location: 'Austin, US', verified: true },
+    seller: shortId(a.sellerId),
+    sellerId: a.sellerId,
+    sellerInfo: {
+      handle: shortId(a.sellerId),
+      displayName: `Seller ${shortId(a.sellerId)}`,
+      avatarInitial: 'S',
+      rating: 0,
+      reviewCount: 0,
+      memberSince: '',
+      location: '',
+      verified: false,
+    },
     category: 'Collectibles',
-    subcategory: 'Pokémon',
-    startingPrice: 8000,
-    reservePrice: 12000,
-    bidIncrement: 250,
-    currentBid: 9_500,
-    totalBids: 18,
-    status: 'ACTIVE' as const,
-    endsAt: in1d,
-    imageColor: '#D97706',
-    imageAccent: 'catching_pokemon',
-    imageCount: 4,
-    reserveMet: false,
-    views: 1_340,
-    watchers: 112,
+    startingPrice: a.startingPrice,
+    reservePrice: a.reservePrice ?? undefined,
+    bidIncrement: a.bidIncrement,
+    currentBid: a.currentBid ?? a.startingPrice,
+    totalBids: 0,
+    status: a.status as Auction['status'],
+    endsAt: toUtcDate(a.endTime),
+    imageColor: PALETTE[hash % PALETTE.length],
+    imageAccent: 'sell',
+    imageCount: 1,
+    coverImageUrl: a.coverMediaUrl ?? undefined,
+    reserveMet,
+    views: 0,
+    watchers: 0,
     payout: null,
-  },
-]);
+  };
+}
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+export function mapBid(b: BidResponse, currentUserId?: string): Bid {
+  const handle = b.bidderId;
+  return {
+    id: b.id,
+    username: handle,
+    maskedUsername: `${handle.slice(0, 3)}***${handle.slice(-3)}`,
+    isCurrentUser: currentUserId != null && b.bidderId === currentUserId,
+    amount: b.amount,
+    timestamp: new Date(b.createdAt),
+  };
+}
+
+export function mapTransaction(t: TransactionResponse): Transaction {
+  let type: Transaction['type'] = 'DEPOSIT';
+  switch (t.type) {
+    case 'ESCROW_HOLD':
+      type = 'ESCROW_HOLD';
+      break;
+    case 'ESCROW_RELEASE':
+      type = 'ESCROW_RELEASE';
+      break;
+    case 'ESCROW_REFUND':
+    case 'REFUND':
+      type = 'REFUND';
+      break;
+    case 'WITHDRAWAL':
+      type = 'WITHDRAWAL';
+      break;
+    default:
+      type = 'DEPOSIT';
+  }
+  let status: Transaction['status'] = 'COMPLETED';
+  switch (t.status) {
+    case 'PENDING':
+      status = 'PENDING';
+      break;
+    case 'FAILED':
+      status = 'FAILED';
+      break;
+    default:
+      status = 'COMPLETED';
+  }
+  return {
+    id: t.id,
+    date: new Date(t.createdAt),
+    type,
+    amount: t.amount,
+    status,
+    description: t.description ?? '',
+  };
+}
+
+// ═══ Formatters ═══════════════════════════════════════════════════════════════
+
 export function formatCurrency(n: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 export function formatDate(d: Date): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(d);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d);
 }
 
 export function formatTime(d: Date): string {
-  return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
+  return new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(d);
 }
 
 export function formatBidTime(d: Date): string {
-  return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
-}
-
-export function saveState() {
-  localStorage.setItem('vaultx_user', JSON.stringify(MOCK_USER));
-  localStorage.setItem('vaultx_auctions', JSON.stringify(MOCK_AUCTIONS));
-  localStorage.setItem('vaultx_bids', JSON.stringify(MOCK_BID_HISTORY));
-  localStorage.setItem('vaultx_transactions', JSON.stringify(MOCK_TRANSACTIONS));
+  return new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(d);
 }

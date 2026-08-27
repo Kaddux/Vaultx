@@ -1,12 +1,19 @@
 package com.vaultx.userservice.services;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vaultx.userservice.DTO.KycRequestDTO;
 import com.vaultx.userservice.DTO.UserResponseDTO;
 import com.vaultx.userservice.DTO.UserUpdateRequestDTO;
 import com.vaultx.userservice.Exceptions.UserNotFoundException;
+import com.vaultx.userservice.model.KycSubmission;
+import com.vaultx.userservice.model.OutboxEvent;
 import com.vaultx.userservice.model.Users;
+import com.vaultx.userservice.repository.KycSubmissionRepository;
+import com.vaultx.userservice.repository.OutboxEventRepository;
 import com.vaultx.userservice.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -23,6 +30,15 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private KycSubmissionRepository kycSubmissionRepository;
+
+    @Mock
+    private OutboxEventRepository outboxEventRepository;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private UserService userService;
@@ -207,5 +223,69 @@ class UserServiceTest {
         assertTrue(exception.getMessage().contains(id.toString()));
         verify(userRepository).existsById(id);
         verify(userRepository, never()).deleteById(any(UUID.class));
+    }
+
+    @Test
+    void submitKyc_shouldPersistSubmissionSetVerifiedAndEmitEvent() throws Exception {
+        Users user = createTestUser();
+        UUID userId = user.getId();
+
+        KycRequestDTO request = new KycRequestDTO();
+        request.setDocType("Passport");
+        request.setFullName("Alex Morgan");
+        request.setAddress("123 Bidding Ave, Austin, TX");
+        request.setDocumentRef("doc_scan.jpg");
+        request.setSelfieRef("selfie.png");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(kycSubmissionRepository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(kycSubmissionRepository.save(any(KycSubmission.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(userRepository.save(any(Users.class))).thenReturn(user);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+        UserResponseDTO response = userService.submitKyc(userId, request);
+
+        assertEquals("VERIFIED", response.getKycStatus());
+        assertEquals("Alex Morgan", response.getFullName());
+
+        ArgumentCaptor<KycSubmission> submissionCaptor = ArgumentCaptor.forClass(KycSubmission.class);
+        verify(kycSubmissionRepository).save(submissionCaptor.capture());
+        KycSubmission saved = submissionCaptor.getValue();
+        assertEquals(userId, saved.getUserId());
+        assertEquals("Passport", saved.getDocType());
+        assertEquals("VERIFIED", saved.getStatus());
+
+        ArgumentCaptor<OutboxEvent> outboxCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventRepository).save(outboxCaptor.capture());
+        assertEquals("KYC_SUBMITTED", outboxCaptor.getValue().getEventType());
+    }
+
+    @Test
+    void submitKyc_existingSubmission_shouldUpdateInPlace() throws Exception {
+        Users user = createTestUser();
+        UUID userId = user.getId();
+
+        KycSubmission existing = new KycSubmission();
+        existing.setUserId(userId);
+        existing.setDocType("Driver License");
+        existing.setStatus("VERIFIED");
+
+        KycRequestDTO request = new KycRequestDTO();
+        request.setDocType("National ID");
+        request.setFullName("Alex Morgan");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(kycSubmissionRepository.findByUserId(userId)).thenReturn(Optional.of(existing));
+        when(kycSubmissionRepository.save(any(KycSubmission.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(userRepository.save(any(Users.class))).thenReturn(user);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+        UserResponseDTO response = userService.submitKyc(userId, request);
+
+        assertEquals("VERIFIED", response.getKycStatus());
+        verify(kycSubmissionRepository).save(existing);
+        verify(outboxEventRepository).save(any(OutboxEvent.class));
     }
 }

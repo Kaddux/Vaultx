@@ -39,6 +39,13 @@ public class NotificationController {
                 notificationService.getUnreadCount(currentUserId(userIdHeader))));
     }
 
+    @PutMapping("/read")
+    public ResponseEntity<Map<String, String>> markAllRead(
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader) {
+        notificationService.markAsRead(currentUserId(userIdHeader));
+        return ResponseEntity.ok(Map.of("status", "READ"));
+    }
+
     @PutMapping("/preferences/{eventType}")
     public ResponseEntity<Map<String, String>> updatePreference(
             @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,

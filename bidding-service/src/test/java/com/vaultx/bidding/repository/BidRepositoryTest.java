@@ -80,7 +80,7 @@ class BidRepositoryTest {
     }
 
     @Test
-    void findByAuctionIdAndBidderIdOrderByCreatedAtDesc_ShouldReturnUserBidsForAuction() {
+    void findByAuctionIdAndBidderIdOrderByCreatedAtDesc_ShouldReturnUserBidsForAuction() throws Exception {
         Bid myBid1 = createBid(new BigDecimal("100.00"), "key-" + UUID.randomUUID());
         Bid myBid2 = createBid(new BigDecimal("200.00"), "key-" + UUID.randomUUID());
 
@@ -93,7 +93,9 @@ class BidRepositoryTest {
         otherBid.setIdempotencyKey("key-" + UUID.randomUUID());
 
         bidRepository.save(myBid1);
+        Thread.sleep(5);
         bidRepository.save(otherBid);
+        Thread.sleep(5);
         bidRepository.save(myBid2);
         entityManager.flush();
 

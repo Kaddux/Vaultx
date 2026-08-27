@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
+@Table(name = "wallets")
 @Getter
 @Setter
 public class Wallet {

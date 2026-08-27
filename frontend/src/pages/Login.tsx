@@ -1,53 +1,35 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MOCK_USER, saveState } from '../api';
+import { useAuth } from '../context/AuthContext';
+import { ApiError } from '../api';
 
 export function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    // Simulate auth — wrong pw triggers 401-style error
-    setTimeout(() => {
-      setLoading(false);
-      if (email === 'demo@vaultx.io' && password === 'Demo1234!') {
-        localStorage.setItem('vaultx_logged_in', 'true');
-        
-        // Restore default demo user profile
-        MOCK_USER.username = 'alex_vault';
-        MOCK_USER.fullName = 'Alex Morgan';
-        MOCK_USER.email = 'alex@vaultx.io';
-        MOCK_USER.kycStatus = 'VERIFIED';
-        MOCK_USER.balance = 12_480.00;
-        MOCK_USER.reservedBalance = 3_200.00;
-        saveState();
-
-        navigate('/explore');
-      } else if (email === 'suspended@vaultx.io') {
+    try {
+      await login(email, password);
+      navigate('/explore');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
         setError('403: Account suspended — contact support');
+      } else if (err instanceof ApiError && err.status === 401) {
+        setError('Invalid email or password');
       } else {
-        localStorage.setItem('vaultx_logged_in', 'true');
-
-        // Create new session for this email
-        const userPart = email.split('@')[0];
-        MOCK_USER.username = userPart;
-        MOCK_USER.fullName = userPart.charAt(0).toUpperCase() + userPart.slice(1);
-        MOCK_USER.email = email;
-        MOCK_USER.kycStatus = 'UNVERIFIED';
-        MOCK_USER.balance = 0.00;
-        MOCK_USER.reservedBalance = 0.00;
-        saveState();
-
-        navigate('/explore'); // auto-login for demo
+        setError(err instanceof Error ? err.message : 'Unable to sign in');
       }
-    }, 800);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -154,6 +136,9 @@ export function Login() {
           <Link to="/register" className="text-primary font-medium hover:underline">
             Register
           </Link>
+        </p>
+        <p className="text-xs text-center text-text-muted mt-3">
+          Demo: <span className="font-mono">demo@vaultx.io</span> / <span className="font-mono">Demo1234!</span>
         </p>
       </div>
 

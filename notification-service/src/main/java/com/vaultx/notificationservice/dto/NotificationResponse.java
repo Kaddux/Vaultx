@@ -13,7 +13,8 @@ public record NotificationResponse(
         String message,
         String status,
         LocalDateTime createdAt,
-        LocalDateTime sentAt) {
+        LocalDateTime sentAt,
+        boolean read) {
 
     public static NotificationResponse from(Notification notification) {
         return new NotificationResponse(
@@ -24,6 +25,7 @@ public record NotificationResponse(
                 notification.getMessage(),
                 notification.getStatus(),
                 notification.getCreatedAt(),
-                notification.getSentAt());
+                notification.getSentAt(),
+                notification.getReadAt() != null);
     }
 }

@@ -24,7 +24,8 @@ public class NotificationEventConsumer {
             topics = {
                     "user.registered", "auction.created", "auction.started",
                     "auction.ended", "bid.placed", "auction.won", "auction.lost",
-                    "payment.completed", "payment.failed", "notification.requested"
+                    "payment.completed", "payment.failed", "notification.requested",
+                    "kyc.submitted"
             },
             containerFactory = "kafkaListenerContainerFactory"
     )

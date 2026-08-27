@@ -14,6 +14,8 @@ public interface PaymentIntentRepository extends JpaRepository<PaymentIntent, UU
 
     Optional<PaymentIntent> findByIdempotencyKey(String idempotencyKey);
 
+    Optional<PaymentIntent> findByCheckoutSessionId(String checkoutSessionId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PaymentIntent p WHERE p.idempotencyKey = :idempotencyKey")
     Optional<PaymentIntent> findByIdempotencyKeyForUpdate(String idempotencyKey);

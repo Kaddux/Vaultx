@@ -68,16 +68,23 @@ public class AuctionScheduler {
             boolean reserveMet = auction.getReservePrice() == null
                     || (auction.getCurrentBid() != null
                         && auction.getCurrentBid().compareTo(auction.getReservePrice()) >= 0);
-            String status = (auction.getCurrentBid() != null && reserveMet) ? "SOLD" : "UNSOLD";
+
+            // A winning auction waits for the buyer to pay (external payment) before it is SOLD.
+            String status;
+            if (auction.getCurrentBid() != null && reserveMet) {
+                status = "AWAITING_PAYMENT";
+            } else {
+                status = "UNSOLD";
+            }
             auction.setStatus(status);
             auctionRepository.save(auction);
             log.info("Auction {} ended with status {}", auction.getId(), status);
             biddingMetrics.recordAuctionEnded(status);
 
             UUID winnerId = null;
-            if ("SOLD".equals(status)) {
-                Optional<Bid> topBid = bidRepository.findTopByAuctionIdOrderByAmountDesc(auction.getId());
-                winnerId = topBid.map(Bid::getBidderId).orElse(null);
+            if ("AWAITING_PAYMENT".equals(status)) {
+                winnerId = bidRepository.findTopByAuctionIdOrderByAmountDesc(auction.getId())
+                        .map(Bid::getBidderId).orElse(null);
             }
 
             try {
@@ -93,7 +100,7 @@ public class AuctionScheduler {
                 ended.setPayload(objectMapper.writeValueAsString(payload));
                 outboxEventRepository.save(ended);
 
-                if ("SOLD".equals(status) && winnerId != null) {
+                if ("AWAITING_PAYMENT".equals(status) && winnerId != null) {
                     OutboxEvent won = new OutboxEvent();
                     won.setAggregateType("AUCTION");
                     won.setAggregateId(winnerId.toString());

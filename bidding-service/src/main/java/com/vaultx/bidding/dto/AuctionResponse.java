@@ -24,4 +24,5 @@ public class AuctionResponse {
     private int extensionPeriodSeconds;
     private String currency;
     private LocalDateTime createdAt;
+    private String coverMediaUrl;
 }

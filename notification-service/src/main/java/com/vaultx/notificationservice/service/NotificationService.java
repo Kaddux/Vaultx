@@ -87,7 +87,12 @@ public class NotificationService {
     }
 
     public long getUnreadCount(UUID userId) {
-        return notificationRepository.countByUserIdAndStatus(userId, "SENT");
+        return notificationRepository.countByUserIdAndStatusAndReadAtIsNull(userId, "SENT");
+    }
+
+    @Transactional
+    public void markAsRead(UUID userId) {
+        notificationRepository.markAllAsRead(userId);
     }
 
     @Transactional

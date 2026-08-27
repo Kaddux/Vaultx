@@ -56,6 +56,19 @@ export function CountdownClock({ endsAt }: { endsAt: Date }) {
     return () => clearInterval(interval);
   }, [endsAt]);
 
+  const isEnded = secondsLeft <= 0;
+
+  if (isEnded) {
+    return (
+      <div className="text-center">
+        <div className="font-mono tabular-nums text-5xl font-bold tracking-tight text-danger">00:00:00</div>
+        <div className="text-xs text-text-muted mt-1 font-medium uppercase tracking-wider">
+          Auction ended
+        </div>
+      </div>
+    );
+  }
+
   const hours = Math.floor(secondsLeft / 3600);
   const minutes = Math.floor((secondsLeft % 3600) / 60);
   const seconds = secondsLeft % 60;
@@ -69,17 +82,15 @@ export function CountdownClock({ endsAt }: { endsAt: Date }) {
     ? 'text-warning'
     : 'text-text-primary';
 
+  const label = isDanger || isWarning ? 'Ending soon' : 'Time remaining';
+
   return (
     <div className={`text-center ${isDanger ? 'pulse-ring rounded-xl' : ''}`}>
       <div className={`font-mono tabular-nums text-5xl font-bold tracking-tight ${colorClass}`}>
         {String(hours).padStart(2, '0')}:{String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
       </div>
       <div className="text-xs text-text-muted mt-1 font-medium uppercase tracking-wider">
-        {isDanger
-          ? '⚠ Soft-close window active'
-          : isWarning
-          ? 'Ending soon'
-          : 'Time remaining'}
+        {label}
       </div>
     </div>
   );

@@ -1,4 +1,21 @@
 services:
+  localstack:
+    image: localstack/localstack:3.4.0
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+      - EDGE_PORT=4566
+      - PERSISTENCE=0
+    volumes:
+      - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+    healthcheck:
+      test: ["CMD", "awslocal", "s3", "ls"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     ports:
@@ -114,10 +131,17 @@ services:
       - SPRING_SQL_INIT_MODE=never
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - GRPC_USER_SERVICE_HOST=user-service
+      - STORAGE_ENDPOINT=http://localstack:4566
+      - STORAGE_PRESIGN_ENDPOINT=${STORAGE_PRESIGN_ENDPOINT:-http://localhost:4566}
+      - STORAGE_PUBLIC_BASE_URL=${STORAGE_PUBLIC_BASE_URL:-http://localhost:4566/vaultx-media}
+      - STORAGE_ACCESS_KEY=test
+      - STORAGE_SECRET_KEY=test
     depends_on:
       bid-service-db:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      localstack:
         condition: service_healthy
       user-service:
         condition: service_healthy
@@ -156,6 +180,11 @@ services:
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - GRPC_USER_SERVICE_HOST=user-service
       - GRPC_BIDDING_SERVICE_HOST=bidding-service
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_xxx}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_xxx}
+      - STRIPE_CURRENCY=${STRIPE_CURRENCY:-usd}
+      - CHECKOUT_SUCCESS_URL=${CHECKOUT_SUCCESS_URL:-http://localhost:5173/wallet}
+      - CHECKOUT_CANCEL_URL=${CHECKOUT_CANCEL_URL:-http://localhost:5173/wallet}
     depends_on:
       tx-service-db:
         condition: service_healthy

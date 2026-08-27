@@ -72,4 +72,9 @@ public class KafkaTopicConfig {
     public NewTopic notificationRequestedTopic() {
         return new NewTopic("notification.requested", 6, (short) 1);
     }
+
+    @Bean
+    public NewTopic kycSubmittedTopic() {
+        return new NewTopic("kyc.submitted", 6, (short) 1);
+    }
 }

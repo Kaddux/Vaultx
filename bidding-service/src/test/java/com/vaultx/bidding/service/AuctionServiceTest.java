@@ -1,10 +1,13 @@
 package com.vaultx.bidding.service;
 
+import com.vaultx.bidding.config.StorageProperties;
 import com.vaultx.bidding.dto.AuctionRequest;
 import com.vaultx.bidding.dto.AuctionResponse;
 import com.vaultx.bidding.metrics.BiddingMetrics;
 import com.vaultx.bidding.model.Auction;
+import com.vaultx.bidding.model.AuctionMedia;
 import com.vaultx.bidding.model.OutboxEvent;
+import com.vaultx.bidding.repository.AuctionMediaRepository;
 import com.vaultx.bidding.repository.AuctionRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +42,12 @@ class AuctionServiceTest {
 
     @Mock
     private BiddingMetrics biddingMetrics;
+
+    @Mock
+    private AuctionMediaRepository auctionMediaRepository;
+
+    @Mock
+    private StorageProperties storageProperties;
 
     @InjectMocks
     private AuctionService auctionService;
@@ -104,7 +113,7 @@ class AuctionServiceTest {
     void getById_success_auctionFound() {
         UUID auctionId = UUID.randomUUID();
         Auction auction = buildAuction(auctionId);
-        when(auctionRepository.findById(auctionId)).thenReturn(Optional.of(auction));
+        when(auctionRepository.findActiveById(auctionId)).thenReturn(Optional.of(auction));
 
         AuctionResponse response = auctionService.getById(auctionId);
 
@@ -117,56 +126,73 @@ class AuctionServiceTest {
     @Test
     void getById_error_notFound_throwsRuntimeException() {
         UUID auctionId = UUID.randomUUID();
-        when(auctionRepository.findById(auctionId)).thenReturn(Optional.empty());
+        when(auctionRepository.findActiveById(auctionId)).thenReturn(Optional.empty());
 
         RuntimeException exception = assertThrows(RuntimeException.class,
                 () -> auctionService.getById(auctionId));
 
         assertTrue(exception.getMessage().contains("Auction not found"));
         assertTrue(exception.getMessage().contains(auctionId.toString()));
-        verify(auctionRepository).findById(auctionId);
+        verify(auctionRepository).findActiveById(auctionId);
     }
 
     @Test
-    void getAll_success_withStatusFilter_callsFindByStatus() {
+    void getById_setsCoverMediaUrl_whenCoverExists() {
+        UUID auctionId = UUID.randomUUID();
+        Auction auction = buildAuction(auctionId);
+        AuctionMedia cover = new AuctionMedia();
+        cover.setObjectKey("auctions/" + auctionId + "/cover.jpg");
+
+        when(auctionRepository.findActiveById(auctionId)).thenReturn(Optional.of(auction));
+        when(auctionMediaRepository.findFirstByAuctionIdAndCoverTrue(auctionId)).thenReturn(Optional.of(cover));
+        when(storageProperties.getPublicBaseUrl()).thenReturn("http://localhost:4566/vaultx-media");
+
+        AuctionResponse response = auctionService.getById(auctionId);
+
+        assertEquals("http://localhost:4566/vaultx-media/auctions/" + auctionId + "/cover.jpg",
+                response.getCoverMediaUrl());
+    }
+
+    @Test
+    void getAll_success_withStatusFilter_callsFindByArchivedFalseAndStatus() {
         String statusFilter = "ACTIVE";
         Auction auction = buildAuction(UUID.randomUUID());
         auction.setStatus("ACTIVE");
-        when(auctionRepository.findByStatus(statusFilter)).thenReturn(List.of(auction));
+        when(auctionRepository.findByArchivedFalseAndStatus(statusFilter)).thenReturn(List.of(auction));
 
         List<AuctionResponse> responses = auctionService.getAll(statusFilter);
 
         assertNotNull(responses);
         assertEquals(1, responses.size());
         assertEquals(auction.getId(), responses.get(0).getId());
-        verify(auctionRepository).findByStatus(statusFilter);
-        verify(auctionRepository, never()).findAll();
+        verify(auctionRepository).findByArchivedFalseAndStatus(statusFilter);
+        verify(auctionRepository, never()).findByArchivedFalse();
     }
 
     @Test
-    void getAll_success_nullFilter_callsFindAll() {
+    void getAll_success_nullFilter_callsFindByArchivedFalse() {
         Auction auction = buildAuction(UUID.randomUUID());
-        when(auctionRepository.findAll()).thenReturn(List.of(auction));
+        when(auctionRepository.findByArchivedFalse()).thenReturn(List.of(auction));
 
         List<AuctionResponse> responses = auctionService.getAll(null);
 
         assertNotNull(responses);
         assertEquals(1, responses.size());
-        verify(auctionRepository).findAll();
-        verify(auctionRepository, never()).findByStatus(anyString());
+        verify(auctionRepository).findByArchivedFalse();
+        verify(auctionRepository, never()).findByArchivedFalseAndStatus(anyString());
     }
 
     @Test
-    void getAll_success_blankFilter_callsFindAll() {
+    void getAll_success_blankFilter_callsFindByArchivedFalse() {
         Auction auction = buildAuction(UUID.randomUUID());
-        when(auctionRepository.findAll()).thenReturn(List.of(auction));
+        when(auctionRepository.findByArchivedFalse()).thenReturn(List.of(auction));
 
         List<AuctionResponse> responses = auctionService.getAll("   ");
 
         assertNotNull(responses);
         assertEquals(1, responses.size());
-        verify(auctionRepository).findAll();
-        verify(auctionRepository, never()).findByStatus(anyString());
+        verify(auctionRepository).findByArchivedFalse();
+        verify(auctionRepository, never()).findByArchivedFalseAndStatus(anyString());
     }
 
     private AuctionRequest buildAuctionRequest() {

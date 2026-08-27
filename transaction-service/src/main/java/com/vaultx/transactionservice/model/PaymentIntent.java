@@ -19,6 +19,9 @@ public class PaymentIntent {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    @Column(name = "seller_id")
+    private UUID sellerId;
+
     @Column(name = "auction_id", nullable = false)
     private UUID auctionId;
 
@@ -34,11 +37,23 @@ public class PaymentIntent {
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
+    @Column(name = "checkout_session_id", length = 255)
+    private String checkoutSessionId;
+
+    @Column(name = "checkout_url", columnDefinition = "TEXT")
+    private String checkoutUrl;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "wallet_debited", nullable = false)
+    private boolean walletDebited = true;
+
+    @Column(name = "shortfall_note", columnDefinition = "TEXT")
+    private String shortfallNote;
 
     @Version
     private Long version = 0L;

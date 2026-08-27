@@ -63,6 +63,12 @@ public class Auction {
     @Version
     private Long version;
 
+    @Column(nullable = false)
+    private boolean archived = false;
+
+    @Column(name = "archived_at")
+    private LocalDateTime archivedAt;
+
     @PrePersist
     protected void onCreate() {
         if (id == null) id = UUID.randomUUID();

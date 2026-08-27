@@ -10,6 +10,7 @@ import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionRepository;
 import com.vaultx.bidding.repository.BidRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
+import com.vaultx.user.grpc.UserProfile;
 import com.vaultx.user.grpc.WalletBalance;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,6 +73,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(10000.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         when(bidRepository.findByIdempotencyKey(request.getIdempotencyKey())).thenReturn(Optional.empty());
 
@@ -135,6 +137,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(300.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         RuntimeException exception = assertThrows(RuntimeException.class,
                 () -> bidService.placeBid(auctionId, bidderId, request));
@@ -155,6 +158,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(10000.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         when(auctionRepository.findByIdWithLock(auctionId)).thenReturn(Optional.empty());
 
@@ -178,6 +182,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(10000.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         Auction auction = buildAuction(auctionId, sellerId);
         auction.setStatus("PENDING");
@@ -203,6 +208,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(10000.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         Auction auction = buildAuction(auctionId, sellerId);
         auction.setStatus("ACTIVE");
@@ -227,6 +233,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(10000.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         Auction auction = buildAuction(auctionId, sellerId);
         auction.setStatus("ACTIVE");
@@ -252,6 +259,7 @@ class BidServiceTest {
         when(walletBalance.getBalance()).thenReturn(10000.0);
         when(walletBalance.getReservedBalance()).thenReturn(0.0);
         when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(buildVerifiedProfile());
 
         Auction auction = buildAuction(auctionId, sellerId);
         auction.setStatus("ACTIVE");
@@ -337,6 +345,39 @@ class BidServiceTest {
 
         assertNotNull(responses);
         assertTrue(responses.isEmpty());
+    }
+
+    @Test
+    void placeBid_error_notKycVerified_throwsRuntimeException() {
+        UUID auctionId = UUID.randomUUID();
+        UUID bidderId = UUID.randomUUID();
+        BidRequest request = buildBidRequest(new BigDecimal("150.00"), "key-nokyc");
+
+        when(bidRepository.findByIdempotencyKey(request.getIdempotencyKey())).thenReturn(Optional.empty());
+
+        WalletBalance walletBalance = mock(WalletBalance.class);
+        when(walletBalance.getBalance()).thenReturn(10000.0);
+        when(walletBalance.getReservedBalance()).thenReturn(0.0);
+        when(userGrpcClient.getWalletBalance(anyString())).thenReturn(walletBalance);
+
+        UserProfile unverified = UserProfile.newBuilder()
+                .setUserId(bidderId.toString())
+                .setKycStatus("PENDING")
+                .build();
+        when(userGrpcClient.getUserProfile(anyString())).thenReturn(unverified);
+
+        RuntimeException exception = assertThrows(RuntimeException.class,
+                () -> bidService.placeBid(auctionId, bidderId, request));
+
+        assertEquals("KYC verification required to place a bid", exception.getMessage());
+        verify(auctionRepository, never()).findByIdWithLock(any());
+    }
+
+    private UserProfile buildVerifiedProfile() {
+        return UserProfile.newBuilder()
+                .setUserId(UUID.randomUUID().toString())
+                .setKycStatus("VERIFIED")
+                .build();
     }
 
     private BidRequest buildBidRequest(BigDecimal amount, String idempotencyKey) {

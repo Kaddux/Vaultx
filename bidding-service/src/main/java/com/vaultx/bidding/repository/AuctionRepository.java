@@ -15,6 +15,18 @@ public interface AuctionRepository extends JpaRepository<Auction, UUID> {
 
     List<Auction> findByStatus(String status);
 
+    List<Auction> findByArchivedFalse();
+    List<Auction> findByArchivedFalseAndStatus(String status);
+    List<Auction> findBySellerIdAndArchivedFalse(UUID sellerId);
+    List<Auction> findBySellerIdAndArchivedFalseAndStatus(UUID sellerId, String status);
+
+    @Query("SELECT a FROM Auction a WHERE a.archived = false AND a.status IN :statuses AND a.endTime <= :cutoff")
+    List<Auction> findArchiveCandidates(@Param("statuses") List<String> statuses,
+                                        @Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT a FROM Auction a WHERE a.id = :id AND a.archived = false")
+    Optional<Auction> findActiveById(@Param("id") UUID id);
+
     @Query("SELECT a FROM Auction a WHERE a.status = 'PENDING' AND a.startTime <= :now")
     List<Auction> findPendingToStart(@Param("now") LocalDateTime now);
 
@@ -24,6 +36,8 @@ public interface AuctionRepository extends JpaRepository<Auction, UUID> {
     @Lock(LockModeType.OPTIMISTIC)
     @Query("SELECT a FROM Auction a WHERE a.id = :id")
     Optional<Auction> findByIdWithLock(@Param("id") UUID id);
+
+    List<Auction> findByStatusAndEndTimeBefore(String status, LocalDateTime endTime);
 
     List<Auction> findBySellerId(UUID id);
 

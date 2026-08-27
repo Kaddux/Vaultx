@@ -46,3 +46,7 @@ build/
 **/.eslintcache
 **/.vite
 
+# Secrets — JWT private signing keys (never commit)
+**/jwt-private.pem
+**/jwt-private*.pem
+

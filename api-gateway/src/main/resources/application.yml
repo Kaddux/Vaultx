@@ -72,6 +72,12 @@ spring:
                 redis-rate-limiter.burstCapacity: 60
                 key-resolver: "#{@userKeyResolver}"
 
+        - id: transaction-service-webhook
+          uri: ${TRANSACTION_SERVICE_URI:http://transaction-service:8002}
+          predicates:
+            - Method=POST
+            - Path=/api/payments/webhook
+
         - id: transaction-service
           uri: ${TRANSACTION_SERVICE_URI:http://transaction-service:8002}
           predicates:

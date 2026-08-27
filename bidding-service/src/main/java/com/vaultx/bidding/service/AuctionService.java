@@ -1,11 +1,14 @@
 package com.vaultx.bidding.service;
 
+import com.vaultx.bidding.config.StorageProperties;
 import com.vaultx.bidding.dto.AuctionRequest;
 import com.vaultx.bidding.dto.AuctionResponse;
 import com.vaultx.bidding.dto.event.AuctionCreatedEvent;
 import com.vaultx.bidding.metrics.BiddingMetrics;
 import com.vaultx.bidding.model.Auction;
+import com.vaultx.bidding.model.AuctionMedia;
 import com.vaultx.bidding.model.OutboxEvent;
+import com.vaultx.bidding.repository.AuctionMediaRepository;
 import com.vaultx.bidding.repository.AuctionRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -25,6 +28,8 @@ public class AuctionService {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
     private final BiddingMetrics biddingMetrics;
+    private final AuctionMediaRepository auctionMediaRepository;
+    private final StorageProperties storageProperties;
 
     @Transactional
     public AuctionResponse create(AuctionRequest request, UUID sellerId) {
@@ -65,7 +70,7 @@ public class AuctionService {
     }
 
     public AuctionResponse getById(UUID id) {
-        Auction auction = auctionRepository.findById(id)
+        Auction auction = auctionRepository.findActiveById(id)
                 .orElseThrow(() -> new RuntimeException("Auction not found: " + id));
         return toResponse(auction);
     }
@@ -78,13 +83,13 @@ public class AuctionService {
         boolean hasStatus = statusFilter != null && !statusFilter.isBlank();
         List<Auction> auctions;
         if (sellerId != null && hasStatus) {
-            auctions = auctionRepository.findBySellerIdAndStatus(sellerId, statusFilter.toUpperCase());
+            auctions = auctionRepository.findBySellerIdAndArchivedFalseAndStatus(sellerId, statusFilter.toUpperCase());
         } else if (sellerId != null) {
-            auctions = auctionRepository.findBySellerId(sellerId);
+            auctions = auctionRepository.findBySellerIdAndArchivedFalse(sellerId);
         } else if (hasStatus) {
-            auctions = auctionRepository.findByStatus(statusFilter.toUpperCase());
+            auctions = auctionRepository.findByArchivedFalseAndStatus(statusFilter.toUpperCase());
         } else {
-            auctions = auctionRepository.findAll();
+            auctions = auctionRepository.findByArchivedFalse();
         }
         return auctions.stream().map(this::toResponse).toList();
     }
@@ -106,6 +111,12 @@ public class AuctionService {
         r.setExtensionPeriodSeconds(auction.getExtensionPeriodSeconds());
         r.setCurrency(auction.getCurrency());
         r.setCreatedAt(auction.getCreatedAt());
+        auctionMediaRepository.findFirstByAuctionIdAndCoverTrue(auction.getId())
+                .ifPresent(media -> r.setCoverMediaUrl(coverUrl(media)));
         return r;
+    }
+
+    private String coverUrl(AuctionMedia media) {
+        return storageProperties.getPublicBaseUrl() + "/" + media.getObjectKey();
     }
 }

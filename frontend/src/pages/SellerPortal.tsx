@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TopNav } from '../components/TopNav';
 import { CountdownTimer } from '../components/CountdownTimer';
-import { MOCK_SELLER_AUCTIONS, Auction, formatCurrency, formatDate, MOCK_AUCTIONS, MOCK_USER, saveState } from '../api';
+import { api, mapAuction, Auction, AuctionMedia, formatCurrency, formatDate, ApiError, uploadToPresignedUrl, mediaTypeOf, mediaSizeLimit } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 function AuctionStatusPill({ status }: { status: Auction['status'] }) {
   if (status === 'ACTIVE') return <span className="pill-green">ACTIVE</span>;
   if (status === 'PENDING') return <span className="pill-amber">PENDING</span>;
+  if (status === 'AWAITING_PAYMENT') return <span className="pill-amber">AWAITING PAYMENT</span>;
   if (status === 'SOLD') return <span className="pill-indigo">SOLD</span>;
   return <span className="pill-red">UNSOLD</span>;
 }
@@ -33,72 +35,134 @@ const DEFAULT_FORM: CreateAuctionForm = {
 };
 
 export function SellerPortal() {
+  const { user } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [form, setForm] = useState<CreateAuctionForm>(DEFAULT_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [successToast, setSuccessToast] = useState(false);
-  const [auctions, setAuctions] = useState<Auction[]>(MOCK_SELLER_AUCTIONS);
+  const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [step, setStep] = useState<'form' | 'media'>('form');
+  const [createdAuction, setCreatedAuction] = useState<Auction | null>(null);
+  const [media, setMedia] = useState<AuctionMedia[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setLoading(true);
+    api.auctions
+      .list({ sellerId: user.id })
+      .then((data) => {
+        if (!cancelled) setAuctions(data.map(mapAuction));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load your auctions');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const update = (field: keyof CreateAuctionForm) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError('');
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
-      setShowCreateModal(false);
-      setSuccessToast(true);
-
-      const newAuction: Auction = {
-        id: `auc_created_${Date.now()}`,
-        lotNumber: String(8412 + MOCK_AUCTIONS.length),
+    try {
+      const created = await api.auctions.create({
         title: form.title,
-        subtitle: form.description.slice(0, 80),
         description: form.description,
-        lotDescription: [form.description],
-        specs: [
-          { label: 'Starting Price', value: formatCurrency(Number(form.startingPrice)) },
-          { label: 'Reserve Price', value: form.reservePrice ? formatCurrency(Number(form.reservePrice)) : 'None' },
-          { label: 'Bid Increment', value: formatCurrency(Number(form.bidIncrement)) },
-        ],
-        seller: MOCK_USER.username,
-        sellerInfo: {
-          handle: MOCK_USER.username,
-          displayName: MOCK_USER.fullName,
-          avatarInitial: MOCK_USER.fullName.charAt(0),
-          rating: 5.0,
-          reviewCount: 1,
-          memberSince: '2026',
-          location: 'USA',
-          verified: true,
-        },
-        category: 'Collectibles',
         startingPrice: Number(form.startingPrice),
         reservePrice: form.reservePrice ? Number(form.reservePrice) : undefined,
         bidIncrement: Number(form.bidIncrement),
-        currentBid: Number(form.startingPrice),
-        totalBids: 0,
-        status: 'ACTIVE',
-        endsAt: form.endTime ? new Date(form.endTime) : new Date(Date.now() + 7 * 24 * 3600 * 1000),
-        imageColor: '#1d4ed8',
-        imageAccent: 'sell',
-        imageCount: 1,
-        reserveMet: false,
-        views: 0,
-        watchers: 0,
-        payout: null,
-      };
+        startTime: new Date(form.startTime).toISOString(),
+        endTime: new Date(form.endTime).toISOString(),
+        extensionPeriodSeconds: Number(form.extensionPeriod) || 120,
+        currency: 'USD',
+      });
+      const createdMap = mapAuction(created);
+      setCreatedAuction(createdMap);
+      setStep('media');
+      setMedia([]);
+      setMediaError('');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setSubmitError(err.message);
+      } else {
+        setSubmitError(err instanceof Error ? err.message : 'Failed to create auction');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-      MOCK_AUCTIONS.push(newAuction);
-      MOCK_SELLER_AUCTIONS.push(newAuction);
-      saveState();
+  const handleMediaFiles = async (files: FileList | File[]) => {
+    if (!createdAuction) return;
+    setMediaError('');
+    for (const file of Array.from(files)) {
+      const type = mediaTypeOf(file);
+      if (file.size > mediaSizeLimit(type)) {
+        setMediaError(`"${file.name}" exceeds the ${type === 'VIDEO' ? '100MB' : '10MB'} limit.`);
+        continue;
+      }
+      setUploading(true);
+      try {
+        const presign = await api.auctions.createUpload(createdAuction.id, {
+          contentType: file.type || 'application/octet-stream',
+          fileName: file.name,
+          fileSizeBytes: file.size,
+        });
+        await uploadToPresignedUrl(presign, file);
+        const done = await api.auctions.completeUpload(createdAuction.id, presign.mediaId);
+        setMedia((prev) => [done, ...prev]);
+      } catch (err) {
+        setMediaError(err instanceof Error ? err.message : 'Failed to upload media');
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
 
-      setAuctions([...MOCK_SELLER_AUCTIONS]);
-      setForm(DEFAULT_FORM);
-      setTimeout(() => setSuccessToast(false), 3500);
-    }, 1000);
+  const handleRemoveMedia = async (mediaId: string) => {
+    if (!createdAuction) return;
+    try {
+      await api.auctions.removeMedia(createdAuction.id, mediaId);
+      setMedia((prev) => prev.filter((m) => m.id !== mediaId));
+    } catch (err) {
+      setMediaError(err instanceof Error ? err.message : 'Failed to remove media');
+    }
+  };
+
+  const handleSetCover = async (mediaId: string) => {
+    if (!createdAuction) return;
+    try {
+      await api.auctions.setCover(createdAuction.id, mediaId);
+      setMedia((prev) => prev.map((m) => ({ ...m, cover: m.id === mediaId })));
+    } catch (err) {
+      setMediaError(err instanceof Error ? err.message : 'Failed to set cover');
+    }
+  };
+
+  const handleDone = () => {
+    if (createdAuction) setAuctions((prev) => [createdAuction, ...prev]);
+    setShowCreateModal(false);
+    setStep('form');
+    setCreatedAuction(null);
+    setMedia([]);
+    setMediaError('');
+    setForm(DEFAULT_FORM);
+    setSuccessToast(true);
+    setTimeout(() => setSuccessToast(false), 3500);
   };
 
   return (
@@ -137,7 +201,7 @@ export function SellerPortal() {
               { label: 'Total Listings', value: auctions.length, color: 'text-text-primary' },
               { label: 'Active', value: auctions.filter((a) => a.status === 'ACTIVE').length, color: 'text-success' },
               { label: 'Sold', value: auctions.filter((a) => a.status === 'SOLD').length, color: 'text-primary' },
-              { label: 'Total Bids', value: auctions.reduce((s, a) => s + a.totalBids, 0), color: 'text-warning' },
+              { label: 'Pending', value: auctions.filter((a) => a.status === 'PENDING').length, color: 'text-warning' },
             ].map((s) => (
               <div key={s.label} className="card p-4">
                 <div className="text-xs text-text-muted font-medium">{s.label}</div>
@@ -145,6 +209,12 @@ export function SellerPortal() {
               </div>
             ))}
           </div>
+
+          {loadError && (
+            <div className="mb-4 p-4 bg-danger-light border border-danger/20 rounded-lg text-sm text-danger">
+              {loadError}
+            </div>
+          )}
 
           {/* Auctions table */}
           <div className="card overflow-hidden">
@@ -160,56 +230,65 @@ export function SellerPortal() {
                     <th className="text-right">Current Bid</th>
                     <th>Reserve</th>
                     <th>Status</th>
-                    <th>Payout</th>
                     <th>Ends</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {auctions.map((auction) => (
-                    <tr key={auction.id}>
-                      <td>
-                        <div className="font-medium text-text-primary max-w-[220px] truncate">{auction.title}</div>
-                        <div className="text-xs text-text-muted">{auction.category}</div>
-                      </td>
-                      <td className="text-center tabular-nums">{auction.totalBids}</td>
-                      <td className="text-right font-bold tabular-nums">{formatCurrency(auction.currentBid)}</td>
-                      <td>
-                        {auction.reserveMet ? (
-                          <span className="flex items-center gap-1 text-success text-xs font-medium">
-                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span> Met
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-danger text-xs font-medium">
-                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>cancel</span> Not met
-                          </span>
-                        )}
-                      </td>
-                      <td><AuctionStatusPill status={auction.status} /></td>
-                      <td>
-                        {auction.payout === 'RELEASED' ? (
-                          <span className="pill-green">RELEASED</span>
-                        ) : auction.status === 'SOLD' ? (
-                          <span className="pill-amber">PENDING</span>
-                        ) : (
-                          <span className="text-text-muted text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap">
-                        {auction.status === 'ACTIVE' ? (
-                          <CountdownTimer endsAt={auction.endsAt} />
-                        ) : (
-                          <span className="text-xs text-text-muted">{formatDate(auction.endsAt)}</span>
-                        )}
-                      </td>
-                      <td>
-                        <button className="btn-secondary text-xs py-1 px-2.5">
-                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>open_in_new</span>
-                          View
-                        </button>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-8 text-text-muted text-sm">Loading your auctions…</td>
+                    </tr>
+                  ) : auctions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-8 text-text-muted text-sm">
+                        You haven't created any auctions yet.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    auctions.map((auction) => (
+                      <tr key={auction.id}>
+                        <td>
+                          <div className="font-medium text-text-primary max-w-[220px] truncate">{auction.title}</div>
+                          <div className="text-xs text-text-muted">Lot #{auction.lotNumber}</div>
+                        </td>
+                        <td className="text-center tabular-nums">{auction.totalBids}</td>
+                        <td className="text-right font-bold tabular-nums">{formatCurrency(auction.currentBid)}</td>
+                        <td>
+                          {auction.reservePrice ? (
+                            auction.reserveMet ? (
+                              <span className="flex items-center gap-1 text-success text-xs font-medium">
+                                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span> Met
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-danger text-xs font-medium">
+                                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>cancel</span> Not met
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-xs text-text-muted">—</span>
+                          )}
+                        </td>
+                        <td><AuctionStatusPill status={auction.status} /></td>
+                        <td className="whitespace-nowrap">
+                          {auction.status === 'ACTIVE' ? (
+                            <CountdownTimer endsAt={auction.endsAt} />
+                          ) : (
+                            <span className="text-xs text-text-muted">{formatDate(auction.endsAt)}</span>
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => window.location.assign(`/auction/${auction.id}`)}
+                            className="btn-secondary text-xs py-1 px-2.5"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>open_in_new</span>
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -223,7 +302,9 @@ export function SellerPortal() {
           <div className="card w-full max-w-lg modal-slide">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-base font-bold text-text-primary">Create New Auction</h2>
+              <h2 className="text-base font-bold text-text-primary">
+                {step === 'media' && createdAuction ? 'Add Photos & Video' : 'Create New Auction'}
+              </h2>
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="text-text-muted hover:text-text-primary transition-colors duration-150"
@@ -232,7 +313,100 @@ export function SellerPortal() {
               </button>
             </div>
 
+            {step === 'media' && createdAuction ? (
+              <div className="p-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-text-secondary">
+                    Attach highlight images and videos to{' '}
+                    <strong className="text-text-primary">{createdAuction.title}</strong>
+                  </p>
+                  <button
+                    onClick={() => setStep('form')}
+                    className="text-xs text-primary font-semibold hover:underline flex items-center gap-0.5 shrink-0"
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>arrow_back</span>
+                    Back
+                  </button>
+                </div>
+
+                {mediaError && (
+                  <div className="p-3 bg-danger-light border border-danger/20 rounded-lg text-sm text-danger">
+                    {mediaError}
+                  </div>
+                )}
+
+                <label className="block border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:border-primary/40 transition-colors">
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+                    onChange={(e) => { if (e.target.files) handleMediaFiles(e.target.files); }}
+                    className="hidden"
+                  />
+                  <span className="material-symbols-outlined text-text-muted block mb-1" style={{ fontSize: '32px' }}>cloud_upload</span>
+                  <p className="text-sm font-medium text-text-primary">Click to upload images or videos</p>
+                  <p className="text-xs text-text-muted mt-1">Images up to 10MB · Videos up to 100MB</p>
+                </label>
+
+                {uploading && (
+                  <p className="text-xs text-text-secondary flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Uploading…
+                  </p>
+                )}
+
+                <div className="grid grid-cols-3 gap-3">
+                  {media.map((m) => (
+                    <div key={m.id} className="relative group border border-border rounded-lg overflow-hidden">
+                      {m.mediaType === 'IMAGE' ? (
+                        <img src={m.url} alt="" className="w-full h-24 object-cover" />
+                      ) : (
+                        <video src={m.url} className="w-full h-24 object-cover" playsInline />
+                      )}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        {m.mediaType === 'IMAGE' && !m.cover && (
+                          <button
+                            onClick={() => handleSetCover(m.id)}
+                            title="Set as cover"
+                            className="p-1.5 rounded bg-white/90 text-text-primary"
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>star</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRemoveMedia(m.id)}
+                          title="Remove"
+                          className="p-1.5 rounded bg-white/90 text-danger"
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete</span>
+                        </button>
+                      </div>
+                      {m.cover && <span className="absolute top-1 left-1 pill-indigo text-[9px] px-1.5 py-0.5">COVER</span>}
+                    </div>
+                  ))}
+                </div>
+
+                {media.length === 0 && (
+                  <p className="text-center text-xs text-text-muted">No media uploaded yet. You can add some now or later.</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button onClick={handleDone} className="btn-primary flex-1">
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>check</span>
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
             <form onSubmit={handleCreate} className="p-6 space-y-5">
+              {submitError && (
+                <div className="p-3 bg-danger-light border border-danger/20 rounded-lg text-sm text-danger">
+                  {submitError}
+                </div>
+              )}
               {/* Title */}
               <div>
                 <label className="input-label" htmlFor="auction-title">Title</label>
@@ -258,7 +432,7 @@ export function SellerPortal() {
                   <label className="input-label" htmlFor="starting-price">Starting Price ($)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-sm">$</span>
-                    <input id="starting-price" type="number" min="1" step="0.01" value={form.startingPrice} onChange={update('startingPrice')} required placeholder="0.00" className="input-field pl-7 tabular-nums" />
+                    <input id="starting-price" type="number" min="0.01" step="0.01" value={form.startingPrice} onChange={update('startingPrice')} required placeholder="0.00" className="input-field pl-7 tabular-nums" />
                   </div>
                 </div>
                 <div>
@@ -327,6 +501,7 @@ export function SellerPortal() {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

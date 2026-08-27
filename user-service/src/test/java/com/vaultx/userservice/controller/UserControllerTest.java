@@ -1,6 +1,7 @@
 package com.vaultx.userservice.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vaultx.userservice.DTO.KycRequestDTO;
 import com.vaultx.userservice.DTO.UserResponseDTO;
 import com.vaultx.userservice.DTO.UserUpdateRequestDTO;
 import com.vaultx.userservice.Exceptions.UserNotFoundException;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -121,5 +123,35 @@ class UserControllerTest {
     void deleteMe_shouldReturnNoContent() throws Exception {
         mockMvc.perform(delete("/api/users/me"))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void submitKyc_shouldReturnUpdatedUser() throws Exception {
+        KycRequestDTO request = new KycRequestDTO();
+        request.setDocType("Passport");
+        request.setFullName("Alex Morgan");
+
+        UserResponseDTO response = new UserResponseDTO();
+        response.setId(testUserId);
+        response.setUsername("testuser");
+        response.setEmail("test@example.com");
+        response.setKycStatus("VERIFIED");
+
+        when(userService.submitKyc(eq(testUserId), any(KycRequestDTO.class)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/users/me/kyc")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kycStatus").value("VERIFIED"));
+    }
+
+    @Test
+    void submitKyc_missingFields_shouldReturnBadRequest() throws Exception {
+        mockMvc.perform(post("/api/users/me/kyc")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 }

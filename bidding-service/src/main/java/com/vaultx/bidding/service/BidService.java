@@ -12,6 +12,7 @@ import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionRepository;
 import com.vaultx.bidding.repository.BidRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
+import com.vaultx.user.grpc.UserProfile;
 import com.vaultx.user.grpc.WalletBalance;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -61,6 +62,11 @@ public class BidService {
         WalletBalance wallet = userGrpcClient.getWalletBalance(bidderId.toString());
         BigDecimal availableBalance = BigDecimal.valueOf(wallet.getBalance())
                 .subtract(BigDecimal.valueOf(wallet.getReservedBalance()));
+
+        UserProfile profile = userGrpcClient.getUserProfile(bidderId.toString());
+        if (profile == null || !"VERIFIED".equals(profile.getKycStatus())) {
+            throw new RuntimeException("KYC verification required to place a bid");
+        }
 
         if (request.getAmount().compareTo(availableBalance) > 0) {
             throw new RuntimeException("Insufficient funds. Available: " + availableBalance);

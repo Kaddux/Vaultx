@@ -56,6 +56,7 @@ public class OutboxPoller {
         return switch (eventType) {
             case "USER_REGISTERED" -> "user.registered";
             case "NOTIFICATION_REQUESTED" -> "notification.requested";
+            case "KYC_SUBMITTED" -> "kyc.submitted";
             default -> throw new IllegalArgumentException("Unknown event type: " + eventType);
         };
     }
