@@ -1,12 +1,12 @@
 # Vaultx — Real-Time Bidding Platform
 
-A production-grade, event-driven **Real-Time Bidding Platform** built with Java, Spring Boot 3, Apache Kafka, gRPC, and PostgreSQL. Buyers and sellers participate in live auctions with real-time bidding, wallet-based escrow, KYC verification, and automated auction lifecycle management.
+A production-grade, event-driven **Real-Time Bidding Platform** built with Java, Spring Boot 3, Apache Kafka, gRPC, and PostgreSQL. Buyers and sellers participate in live auctions with real-time bidding, wallet-based escrow, KYC verification, media uploads, and automated auction lifecycle management. Winner payments are settled online via **Stripe (test mode)**.
 
 ## Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│                   React SPA (Port 3000)                    │
+│                   React SPA (Port 5173)                    │
 └──────────────────────────┬─────────────────────────────────┘
                            │ REST
                            ▼
@@ -28,9 +28,9 @@ A production-grade, event-driven **Real-Time Bidding Platform** built with Java,
      │             │             │             │
      └─────────────┴─────┬───────┴─────────────┘
                          ▼
-              Apache Kafka (KRaft) · Redis · Zipkin
+      Apache Kafka (KRaft) · Redis · LocalStack (S3)
                          │
-                    Prometheus · Grafana
+               Zipkin · Prometheus · Grafana
 ```
 
 ## Tech Stack
@@ -44,9 +44,11 @@ A production-grade, event-driven **Real-Time Bidding Platform** built with Java,
 | Messaging | Apache Kafka 7.6 (KRaft) + Confluent Schema Registry |
 | Database | PostgreSQL 15 (one per service) |
 | Cache | Redis 7 (rate limiting) |
+| Object storage | LocalStack (S3-compatible) — presigned-URL media uploads |
+| Payments | Stripe (`stripe-java`) — Checkout + webhooks (test mode) |
 | Observability | Micrometer, Prometheus, Grafana, Zipkin, structured JSON logs |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
-| Build | Maven (multi-module) |
+| Build | Maven (multi-module, `mvnw` wrapper) |
 | CI/CD | GitHub Actions |
 | Deployment | Docker Compose |
 
@@ -56,30 +58,39 @@ A production-grade, event-driven **Real-Time Bidding Platform** built with Java,
 |---|---|---|---|---|
 | `api-gateway` | 8080 | ✅ | — | Routing, JWT validation, rate limiting, correlation IDs, security headers |
 | `user-service` | 8000 | ✅ | 9000 | Auth, users, wallets, KYC, refresh tokens |
-| `bidding-service` | 8001 | ✅ | 9001 | Auctions, bids, scheduler, outbox → Kafka |
-| `transaction-service` | 8002 | ✅ | 9002 | Payments, escrow, refunds (Saga) |
+| `bidding-service` | 8001 | ✅ | 9001 | Auctions, bids, media, scheduler, archive, outbox → Kafka |
+| `transaction-service` | 8002 | ✅ | 9002 | Stripe settlement, escrow, refunds (Saga) |
 | `notification-service` | 8003 | ✅ | — | Kafka consumer, email/SMS/push simulation, preferences |
 
 ## Key Features
 
-- **Microservices** with database-per-service isolation (zero shared DBs)
-- **Event-driven** with the **transactional outbox pattern** → Kafka topics per event type
-- **gRPC** for low-latency sync inter-service calls (wallet checks, profiles)
-- **JWT RS256 auth** with refresh-token rotation; HMAC-free asymmetric signing
-- **Optimistic + pessimistic locking** for concurrent bid safety
-- **Idempotency keys** (UNIQUE constraints) to prevent duplicate bids/payments
+- **Microservices** with database-per-service isolation (zero shared databases, no cross-service FKs)
+- **Event-driven** with the **transactional outbox pattern** → Kafka topics per event type, retry topics + DLQs
+- **gRPC** for low-latency synchronous inter-service calls (wallet checks, profiles)
+- **JWT RS256 auth** with refresh-token rotation; asymmetric signing
+- **Optimistic + pessimistic locking** for concurrent bid safety; **idempotency keys** (UNIQUE constraints)
+- **Media uploads** via **presigned S3 URLs** (direct-to-storage) with content-type + **magic-byte** validation, cover selection, per-auction limits
+- **Payment-gated settlement**: auction ends → `AWAITING_PAYMENT` → **Stripe Checkout** → `SOLD` on payment; affordability-gated wallet debit with a **shortfall** flag for manual reconciliation
 - **Escrow saga**: bid → win → hold → release/refund with compensation
-- **Rate limiting** via Redis (per-user sliding window on the bid endpoint)
+- **Auction archive retention**: soft-archive finished auctions (`SOLD` 90d / `UNSOLD` 30d), hidden from listings and 404 on direct access
+- **Rate limiting** via Redis (per-user sliding window)
 - **Observability**: Prometheus metrics, Grafana dashboards, Zipkin tracing, correlation-ID JSON logs
-- **Soft-close** auction extension, auto-bid fields, KYC verification flow
-- **CI pipeline** (GitHub Actions) + **Testcontainers** integration tests
+- **KYC verification** flow; **CI pipeline** (GitHub Actions) + Testcontainers integration tests
+
+## Auction Lifecycle
+
+```
+PENDING → ACTIVE → AWAITING_PAYMENT → SOLD  (payments settled via Stripe)
+                                   ↘ UNSOLD (no winner / unpaid after 24h / payment failed)
+Finished auctions are soft-archived after 90d (SOLD) / 30d (UNSOLD).
+```
 
 ## Quick Start
 
 ### Prerequisites
 - Docker + Docker Compose
 - JDK 17 (for local dev)
-- Maven (or use the included `mvnw` wrapper)
+- Maven (or the included `mvnw` wrapper)
 
 ### Run the full stack (Docker)
 
@@ -87,7 +98,7 @@ A production-grade, event-driven **Real-Time Bidding Platform** built with Java,
 docker compose up --build
 ```
 
-All 15 containers start: 5 services + gateway, 4 PostgreSQL DBs, Kafka, Schema Registry, Redis, Zipkin, Prometheus, Grafana.
+All **16 containers** start: 5 services + gateway, 4 PostgreSQL DBs, Kafka, Schema Registry, Redis, LocalStack, Zipkin, Prometheus, Grafana.
 
 | Service | URL |
 |---|---|
@@ -95,11 +106,25 @@ All 15 containers start: 5 services + gateway, 4 PostgreSQL DBs, Kafka, Schema R
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3000 (admin/admin) |
 | Zipkin | http://localhost:9411 |
+| LocalStack (S3) | http://localhost:4566 |
+
+### Stripe (test mode)
+Create a `.env` at the repo root (git-ignored) and set the keys, then restart `transaction-service`:
+
+```
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...   # from `stripe listen --forward-to http://localhost:8080/api/payments/webhook`
+STRIPE_CURRENCY=usd
+CHECKOUT_SUCCESS_URL=http://localhost:5173/wallet
+CHECKOUT_CANCEL_URL=http://localhost:5173/wallet
+```
+
+`docker compose up -d transaction-service` to apply. Settlement works via the Stripe **webhook**, and is also confirmed on redirect (`/api/payments/confirm`) — so it works even without `stripe listen`. Test card: `4242 4242 4242 4242`.
 
 ### Run services locally (infra in Docker)
 
 ```bash
-docker compose up kafka schema-registry user-service-db bid-service-db tx-service-db notification-db redis
+docker compose up kafka schema-registry user-service-db bid-service-db tx-service-db notification-db redis localstack
 # then run each service via IDE or:
 ./mvnw -pl user-service spring-boot:run
 ./mvnw -pl bidding-service spring-boot:run
@@ -113,7 +138,7 @@ docker compose up kafka schema-registry user-service-db bid-service-db tx-servic
 ```bash
 cd frontend
 npm install
-npm run dev     # http://localhost:3000
+npm run dev     # http://localhost:5173
 ```
 
 ## Demo User
@@ -129,33 +154,62 @@ Wallet:   $10,000.00
 
 > Register a second user to test bidding as a buyer (sellers can't bid on their own auctions).
 
-## API Overview (21 endpoints)
+## API Overview
 
 All requests go through the gateway at `http://localhost:8080`. Protected routes require `Authorization: Bearer <accessToken>`.
 
-| Service | Method | Path | Auth |
-|---|---|---|---|
-| User | POST | `/api/auth/register` | — |
-| User | POST | `/api/auth/login` | — |
-| User | POST | `/api/auth/refresh` | — |
-| User | GET | `/api/users/me` | 🔒 |
-| User | PATCH | `/api/users/me` | 🔒 |
-| User | DELETE | `/api/users/me` | 🔒 |
-| User | GET | `/api/wallet` | 🔒 |
-| User | POST | `/api/wallet/deposit` | 🔒 |
-| Bidding | POST | `/api/auctions` | 🔒 |
-| Bidding | GET | `/api/auctions` | — |
-| Bidding | GET | `/api/auctions/{id}` | — |
-| Bidding | POST | `/api/auctions/{id}/bids` | 🔒 |
-| Bidding | GET | `/api/auctions/{id}/bids` | — |
-| Bidding | GET | `/api/auctions/{id}/bids/mine` | 🔒 |
-| Transaction | POST | `/api/payments/release` | 🔒 |
-| Transaction | POST | `/api/payments/refund` | 🔒 |
-| Transaction | GET | `/api/payments/{auctionId}` | 🔒 |
-| Notification | POST | `/api/notifications/request` | — |
-| Notification | GET | `/api/notifications` | 🔒 |
-| Notification | GET | `/api/notifications/unread-count` | 🔒 |
-| Notification | PUT | `/api/notifications/preferences/{eventType}` | 🔒 |
+### Auth & Users
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/auth/register` | — |
+| POST | `/api/auth/login` | — |
+| POST | `/api/auth/refresh` | — |
+| GET | `/api/users/me` | 🔒 |
+| PATCH | `/api/users/me` | 🔒 |
+| DELETE | `/api/users/me` | 🔒 |
+| GET | `/api/wallet` | 🔒 |
+| POST | `/api/wallet/deposit` | 🔒 |
+
+### Auctions & Bids
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/auctions` | 🔒 |
+| GET | `/api/auctions` | — |
+| GET | `/api/auctions/{id}` | — |
+| GET | `/api/auctions/bids/mine` | 🔒 |
+| POST | `/api/auctions/{id}/bids` | 🔒 |
+| GET | `/api/auctions/{id}/bids` | — |
+| GET | `/api/auctions/{id}/bids/mine` | 🔒 |
+
+### Auction Media
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/auctions/{id}/media` | 🔒 (seller) |
+| GET | `/api/auctions/{id}/media` | — |
+| POST | `/api/auctions/{id}/media/{mediaId}/complete` | 🔒 (seller) |
+| PUT | `/api/auctions/{id}/media/{mediaId}/cover` | 🔒 (seller) |
+| DELETE | `/api/auctions/{id}/media/{mediaId}` | 🔒 (seller) |
+
+### Payments
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/payments/{auctionId}/session` | 🔒 |
+| POST | `/api/payments/confirm` | 🔒 |
+| POST | `/api/payments/webhook` | — (Stripe) |
+| POST | `/api/payments/release` | 🔒 |
+| POST | `/api/payments/refund` | 🔒 |
+| GET | `/api/payments/{auctionId}` | 🔒 |
+
+### Watchlist & Notifications
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/watchlist` | 🔒 |
+| POST | `/api/auctions/{id}/watchlist` | 🔒 |
+| DELETE | `/api/auctions/{id}/watchlist` | 🔒 |
+| GET | `/api/notifications` | 🔒 |
+| GET | `/api/notifications/unread-count` | 🔒 |
+| PUT | `/api/notifications/read` | 🔒 |
+| PUT | `/api/notifications/preferences/{eventType}` | 🔒 |
 
 **Example login:**
 ```bash
@@ -168,30 +222,29 @@ curl -X POST http://localhost:8080/api/auth/login \
 
 ```
 Vaultx/
-├── pom.xml                     # Parent Maven (multi-module)
-├── docker-compose.yml          # Full stack orchestration
-├── architecture.md             # Systems architecture blueprint
-├── workflows.md                # End-to-end workflows
-├── WORKFLOW.md                 # Code & workflow explanation
-├── INTERVIEW_QA.md             # Backend interview Q&A
-├── prometheus.yml              # Metrics scrape config
-├── grafana/                    # Dashboards + provisioning
-├── .github/workflows/ci.yml    # CI pipeline
-├── api-gateway/                # Spring Cloud Gateway
-├── user-service/               # Auth, users, wallets, KYC
-├── bidding-service/            # Auctions, bids, scheduler
-├── transaction-service/        # Payments, escrow, refunds
-├── notification-service/       # Kafka consumer, channels
-└── frontend/                   # React + Vite SPA
+├── pom.xml                      # Parent Maven (multi-module)
+├── docker-compose.yml           # Full stack orchestration
+├── prometheus.yml               # Metrics scrape config
+├── grafana/                     # Dashboards + provisioning
+├── localstack/                  # S3 bucket bootstrap (init-aws.sh)
+├── .github/workflows/ci.yml     # CI pipeline
+├── api-gateway/                 # Spring Cloud Gateway (JWT, rate limit, routing)
+├── user-service/                # Auth, users, wallets, KYC
+├── bidding-service/             # Auctions, bids, media, scheduler, archive
+├── transaction-service/         # Stripe settlement, escrow, refunds
+├── notification-service/        # Kafka consumer, channels, preferences
+└── frontend/                    # React + Vite SPA
 ```
 
 ## Event Flow (Bid → Payment)
 
 ```
-Bid placed → Bidding Service validates (gRPC wallet) → saves bid + outbox event
+Bid placed → Bidding Service validates (gRPC) → saves bid + outbox
 → OutboxPoller → Kafka `bid.placed`
-→ AuctionScheduler → auction SOLD → outbox → Kafka `auction.won`
-→ Transaction Service consumes → debits buyer wallet (gRPC) → escrow HELD
+→ AuctionScheduler → auction ends → `AWAITING_PAYMENT` → Kafka `auction.won`
+→ Transaction Service creates a Stripe Checkout Session (buyer pays online)
+→ webhook/confirm (`checkout.session.completed`) → escrow HELD + `payment.completed`
+→ Bidding Service (`payment.completed`) → auction SOLD (affordability-gated wallet debit)
 → POST /api/payments/release → credits seller → escrow RELEASED
 → Notification Service delivers email/SMS/push (simulated)
 ```
@@ -200,20 +253,17 @@ Bid placed → Bidding Service validates (gRPC wallet) → saves bid + outbox ev
 
 ```bash
 # Unit tests per service
-./mvnw -f user-service/pom.xml test
-./mvnw -f bidding-service/pom.xml test
+./mvnw -f user-service/pom.xml test           # 63 tests
+./mvnw -f bidding-service/pom.xml test        # 70 tests
 ./mvnw -f transaction-service/pom.xml test
-
-# Integration tests (requires Docker)
-./mvnw -f transaction-service/pom.xml verify -P integration-tests
 ```
 
 ## Security Notes
 
-- JWT is signed with **RS256** using an RSA keypair. Dev keys are committed for convenience; **override in production** via `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` env vars (point to a secrets manager).
-- Passwords hashed with BCrypt.
-- Refresh tokens stored in DB with rotation + revocation.
-- Rate limiting, security headers, and CORS handled at the gateway.
+- JWT is signed with **RS256** using an RSA keypair. The **private key is not committed** — generate/provide it via `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` env vars. Public keys are committed for the services to verify with.
+- Passwords hashed with **BCrypt**; refresh tokens stored in DB with rotation + revocation.
+- **Stripe keys** are supplied via git-ignored `.env` (never committed).
+- Rate limiting, security headers, and CORS handled at the gateway; **magic-byte validation** on media uploads prevents spoofed content types.
 
 ## License
 
