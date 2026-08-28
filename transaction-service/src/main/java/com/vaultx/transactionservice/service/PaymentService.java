@@ -124,7 +124,7 @@ public class PaymentService {
         map.put("auctionId", auctionId.toString());
         map.put("status", intent.getStatus());
         map.put("amount", intent.getAmount());
-        map.put("buyerId", intent.getUserId().toString());
+        map.put("buyerId", intent.getUserId() == null ? "" : intent.getUserId().toString());
         map.put("sellerId", intent.getSellerId() == null ? "" : intent.getSellerId().toString());
         map.put("walletDebited", intent.isWalletDebited());
         map.put("shortfall", intent.getShortfallNote());
@@ -175,15 +175,26 @@ public class PaymentService {
         BigDecimal amount = intent.getAmount();
 
         // Affordability-gated wallet debit (demo wallet mirrors the purchase).
+        // Prefer DEBIT so funds reserved at bid time are converted; fall back
+        // to PURCHASE for listings that predate bid-time reservation.
         boolean debited = false;
         String shortfall = null;
         try {
             WalletBalance bal = userGrpcClient.getWalletBalance(buyerId.toString());
             if (BigDecimal.valueOf(bal.getBalance()).compareTo(amount) >= 0) {
                 WalletResponse debit = userGrpcClient.updateWallet(
-                        buyerId.toString(), -amount.doubleValue(), "PURCHASE",
+                        buyerId.toString(), -amount.doubleValue(), "DEBIT",
                         "SETTLE_" + intent.getIdempotencyKey(),
                         "Payment for auction " + auctionId);
+                if ("FAILED".equals(debit.getStatus())
+                        && debit.getFailureReason() != null
+                        && debit.getFailureReason().toLowerCase().contains("reserved")) {
+                    // No bid-time reservation on record; use the legacy purchase debit.
+                    debit = userGrpcClient.updateWallet(
+                            buyerId.toString(), -amount.doubleValue(), "PURCHASE",
+                            "SETTLE_" + intent.getIdempotencyKey(),
+                            "Payment for auction " + auctionId);
+                }
                 if ("SUCCESS".equals(debit.getStatus())) {
                     debited = true;
                 } else {

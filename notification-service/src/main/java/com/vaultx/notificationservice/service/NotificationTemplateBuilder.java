@@ -43,13 +43,15 @@ public class NotificationTemplateBuilder {
                     uuidOf(event, "bidderId"), eventType,
                     "Bid Placed",
                     "Your bid of " + money(event, "amount")
-                            + " on auction " + textOf(event, "auctionId") + " is now winning.",
+                            + " on " + labelOf(event)
+                            + " is now winning.",
                     List.of("PUSH"));
 
             case "AUCTION_WON" -> new Template(
                     uuidOf(event, "winnerId"), eventType,
                     "You Won!",
-                    "Congratulations! You won the auction for " + money(event, "finalBid")
+                    "Congratulations! You won " + labelOf(event)
+                            + " for " + money(event, "finalBid")
                             + ". Complete checkout to claim it.",
                     List.of("EMAIL", "SMS", "PUSH"));
 
@@ -57,7 +59,7 @@ public class NotificationTemplateBuilder {
                     key != null && !key.isBlank() ? UUID.fromString(key) : uuidOf(event, "winnerId"),
                     eventType,
                     "Auction Ended",
-                    "Your bid on auction " + textOf(event, "auctionId")
+                    "Your bid on " + labelOf(event)
                             + " did not win. Bidding is now closed.",
                     List.of("PUSH"));
 
@@ -120,6 +122,15 @@ public class NotificationTemplateBuilder {
     private static String money(JsonNode node, String field) {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) return "0";
-        return value.isNumber() ? value.decimalValue().toPlainString() : value.asText();
+        double amount = value.isNumber() ? value.asDouble() : Double.parseDouble(value.asText());
+        return String.format("$%,.2f", amount);
+    }
+
+    private static String labelOf(JsonNode node) {
+        String title = textOf(node, "title");
+        if (title != null && !title.isBlank()) {
+            return "'" + title + "'";
+        }
+        return "auction " + textOf(node, "auctionId");
     }
 }

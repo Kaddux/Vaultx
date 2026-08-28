@@ -253,7 +253,7 @@ export function SellerPortal() {
                           <div className="text-xs text-text-muted">Lot #{auction.lotNumber}</div>
                         </td>
                         <td className="text-center tabular-nums">{auction.totalBids}</td>
-                        <td className="text-right font-bold tabular-nums">{formatCurrency(auction.currentBid)}</td>
+                        <td className="text-right font-bold tabular-nums">{formatCurrency(auction.currentBid ?? auction.startingPrice)}</td>
                         <td>
                           {auction.reservePrice ? (
                             auction.reserveMet ? (

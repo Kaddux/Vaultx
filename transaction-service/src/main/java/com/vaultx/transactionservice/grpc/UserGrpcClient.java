@@ -1,10 +1,12 @@
 package com.vaultx.transactionservice.grpc;
 
 import com.vaultx.user.grpc.GetWalletBalanceRequest;
+import com.vaultx.user.grpc.GetWalletTransactionsRequest;
 import com.vaultx.user.grpc.UpdateWalletRequest;
 import com.vaultx.user.grpc.UserServiceGrpc;
 import com.vaultx.user.grpc.WalletBalance;
 import com.vaultx.user.grpc.WalletResponse;
+import com.vaultx.user.grpc.WalletTransactionList;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +19,14 @@ public class UserGrpcClient {
     public WalletBalance getWalletBalance(String userId) {
         return userStub.getWalletBalance(
                 GetWalletBalanceRequest.newBuilder()
+                        .setUserId(userId)
+                        .build()
+        );
+    }
+
+    public WalletTransactionList getWalletTransactions(String userId) {
+        return userStub.getWalletTransactions(
+                GetWalletTransactionsRequest.newBuilder()
                         .setUserId(userId)
                         .build()
         );

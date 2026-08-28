@@ -14,6 +14,7 @@ import com.vaultx.bidding.repository.BidRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
 import com.vaultx.user.grpc.UserProfile;
 import com.vaultx.user.grpc.WalletBalance;
+import com.vaultx.user.grpc.WalletResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -98,7 +99,47 @@ public class BidService {
             throw new RuntimeException("Bid must be at least " + minBid);
         }
 
-        bidRepository.markOutbidByAuction(auctionId);
+        // Capture the current winning bid so we can release its reservation on outbid.
+        Bid previousWinner = null;
+        List<Bid> winningBids = bidRepository
+                .findByAuctionIdAndStatusOrderByCreatedAtDesc(auctionId, "WINNING");
+        if (!winningBids.isEmpty()) {
+            previousWinner = winningBids.get(0);
+        }
+
+        // Reserve the bid amount in the bidder's wallet (guarded, idempotent server-side).
+        WalletResponse reserve = userGrpcClient.updateWallet(
+                bidderId.toString(),
+                request.getAmount().doubleValue(),
+                "RESERVE",
+                "BIDRES_" + request.getIdempotencyKey(),
+                "Reserve for bid on auction " + auctionId);
+        if (!"SUCCESS".equals(reserve.getStatus())) {
+            throw new RuntimeException("Insufficient funds. " + reserve.getFailureReason());
+        }
+
+        try {
+            bidRepository.markOutbidByAuction(auctionId);
+
+            // Release the funds reserved by the bid we just outbid.
+            if (previousWinner != null) {
+                userGrpcClient.updateWallet(
+                        previousWinner.getBidderId().toString(),
+                        previousWinner.getAmount().doubleValue(),
+                        "RELEASE",
+                        "BIDREL_" + previousWinner.getId().toString(),
+                        "Release reserved funds for outbid on auction " + auctionId);
+            }
+        } catch (RuntimeException e) {
+            // Roll back our own reservation if the outbid/release path fails.
+            userGrpcClient.updateWallet(
+                    bidderId.toString(),
+                    request.getAmount().doubleValue(),
+                    "RELEASE",
+                    "BIDREL_" + request.getIdempotencyKey().toString(),
+                    "Release reserved funds (rollback) for auction " + auctionId);
+            throw e;
+        }
 
         Bid bid = new Bid();
         bid.setId(UUID.randomUUID());

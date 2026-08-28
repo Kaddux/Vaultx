@@ -50,6 +50,7 @@ export interface AuctionResponse {
   currency: string;
   createdAt: string;
   coverMediaUrl: string | null;
+  bidCount?: number;
 }
 
 export interface BidResponse {
@@ -454,7 +455,7 @@ export interface Auction {
   startingPrice: number;
   reservePrice?: number;
   bidIncrement: number;
-  currentBid: number;
+  currentBid: number | null;
   totalBids: number;
   status: 'ACTIVE' | 'PENDING' | 'AWAITING_PAYMENT' | 'SOLD' | 'UNSOLD';
   endsAt: Date;
@@ -481,9 +482,9 @@ export interface Bid {
 export interface Transaction {
   id: string;
   date: Date;
-  type: 'DEPOSIT' | 'ESCROW_HOLD' | 'ESCROW_RELEASE' | 'REFUND' | 'WITHDRAWAL';
+  type: 'DEPOSIT' | 'ESCROW_HOLD' | 'ESCROW_RELEASE' | 'REFUND' | 'WITHDRAWAL' | 'RESERVE' | 'RELEASE';
   amount: number;
-  status: 'COMPLETED' | 'PENDING' | 'FAILED';
+  status: 'COMPLETED' | 'PENDING' | 'FAILED' | 'SUCCESS' | 'SUCCEEDED';
   description: string;
 }
 
@@ -529,8 +530,8 @@ export function mapAuction(a: AuctionResponse): Auction {
     startingPrice: a.startingPrice,
     reservePrice: a.reservePrice ?? undefined,
     bidIncrement: a.bidIncrement,
-    currentBid: a.currentBid ?? a.startingPrice,
-    totalBids: 0,
+    currentBid: a.currentBid,
+    totalBids: a.bidCount ?? 0,
     status: a.status as Auction['status'],
     endsAt: toUtcDate(a.endTime),
     imageColor: PALETTE[hash % PALETTE.length],
@@ -560,10 +561,14 @@ export function mapTransaction(t: TransactionResponse): Transaction {
   let type: Transaction['type'] = 'DEPOSIT';
   switch (t.type) {
     case 'ESCROW_HOLD':
+    case 'DEBIT':
+    case 'PURCHASE':
       type = 'ESCROW_HOLD';
       break;
     case 'ESCROW_RELEASE':
-      type = 'ESCROW_RELEASE';
+    case 'CREDIT':
+    case 'RELEASE':
+      type = 'RELEASE';
       break;
     case 'ESCROW_REFUND':
     case 'REFUND':
@@ -572,13 +577,18 @@ export function mapTransaction(t: TransactionResponse): Transaction {
     case 'WITHDRAWAL':
       type = 'WITHDRAWAL';
       break;
+    case 'RESERVE':
+      type = 'RESERVE';
+      break;
     default:
       type = 'DEPOSIT';
   }
   let status: Transaction['status'] = 'COMPLETED';
   switch (t.status) {
     case 'PENDING':
-      status = 'PENDING';
+    case 'SUCCEEDED':
+    case 'SUCCESS':
+      status = 'COMPLETED';
       break;
     case 'FAILED':
       status = 'FAILED';

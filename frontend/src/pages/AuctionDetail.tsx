@@ -149,13 +149,23 @@ export function AuctionDetail() {
   const [paying, setPaying] = useState(false);
   const [payment, setPayment] = useState<PaymentStatus | null>(null);
   const bidInputRef = useRef<HTMLInputElement>(null);
+  // Tracks whether the user has manually edited the bid amount so the 5s poll
+  // does not overwrite what they typed with the current minimum.
+  const bidEditedRef = useRef(false);
+  // Mirror of the auction state used by the persistent-load callbacks so those
+  // callbacks don't depend on `auction` (avoiding an infinite effect loop that
+  // makes the loading screen jitter). Updated in sync with setAuction.
+  const auctionRef = useRef<Auction | null>(null);
 
   const loadAuction = useCallback(async () => {
     if (!id) return;
     const data = await api.auctions.getById(id);
     const mapped = mapAuction(data);
+    auctionRef.current = mapped;
     setAuction(mapped);
-    setBidAmount(mapped.currentBid + mapped.bidIncrement);
+    if (!bidEditedRef.current) {
+      setBidAmount((mapped.currentBid ?? mapped.startingPrice) + mapped.bidIncrement);
+    }
   }, [id]);
 
   const loadBids = useCallback(async () => {
@@ -164,7 +174,9 @@ export function AuctionDetail() {
       const data = await api.bids.list(id);
       const currentUserId = user?.id;
       setBidHistory(data.map((b) => mapBid(b, currentUserId)));
-      setIsWinner(data.some((b) => b.currentWinner && b.bidderId === currentUserId));
+      const isLeading = data.some((b) => b.currentWinner && b.bidderId === currentUserId);
+      setIsWinner(isLeading);
+      setIsWinning(isLeading && auctionRef.current?.status === 'ACTIVE');
     } catch {
       // ignore transient polling errors
     }
@@ -190,7 +202,10 @@ export function AuctionDetail() {
   }, [id, isAuthenticated]);
 
   const loadPayment = useCallback(async () => {
-    if (!id) return;
+    if (!id || !auctionRef.current || auctionRef.current.status !== 'AWAITING_PAYMENT') {
+      setPayment(null);
+      return;
+    }
     try {
       setPayment(await api.payments.getStatus(id));
     } catch {
@@ -206,15 +221,16 @@ export function AuctionDetail() {
       .finally(() => setLoading(false));
   }, [loadAuction, loadBids, loadWatchStatus, loadMedia, loadPayment]);
 
-  // Poll bid history + auction state while active
+  // Poll bid history + auction state while active (do not poll on ended/pending).
+  // Keyed on the primitive status so it (re)starts when the auction becomes ACTIVE
+  // but avoids re-running on every poll-induced re-render.
   useEffect(() => {
+    if (!auctionRef.current || auctionRef.current.status !== 'ACTIVE') return;
     const interval = setInterval(async () => {
-      if (auction && auction.status === 'ACTIVE') {
-        await Promise.all([loadBids(), loadAuction()]);
-      }
+      await Promise.all([loadBids(), loadAuction()]);
     }, 5000);
     return () => clearInterval(interval);
-  }, [auction, loadBids, loadAuction]);
+  }, [auction?.status, loadBids, loadAuction]);
 
   const toggleWatch = async () => {
     if (!id || !isAuthenticated) {
@@ -249,7 +265,8 @@ export function AuctionDetail() {
     }
 
     setBidError('');
-    const minBid = auction.currentBid + auction.bidIncrement;
+    const currentBid = auction.currentBid ?? auction.startingPrice;
+    const minBid = currentBid + auction.bidIncrement;
     if (bidAmount < minBid) {
       setBidError(`Minimum bid is ${formatCurrency(minBid)}`);
       return;
@@ -273,6 +290,7 @@ export function AuctionDetail() {
 
       setIsWinning(response.currentWinner);
       setNewBidId(response.id);
+      bidEditedRef.current = false;
       setBidAmount(bidAmount + auction.bidIncrement);
       await Promise.all([loadBids(), loadAuction()]);
       setTimeout(() => setNewBidId(null), 3000);
@@ -328,7 +346,7 @@ export function AuctionDetail() {
     );
   }
 
-  const minBid = auction.currentBid + auction.bidIncrement;
+  const minBid = (auction.currentBid ?? auction.startingPrice) + auction.bidIncrement;
 
   const endsLabel = (() => {
     const d = auction.endsAt;
@@ -499,10 +517,10 @@ export function AuctionDetail() {
                 <div className="flex items-end justify-between">
                   <div>
                     <div className="text-xs text-text-muted font-medium">
-                      Current Bid ({bidHistory.length} bids)
+                      {auction.currentBid != null ? 'Current Bid' : 'Starting Price'} ({bidHistory.length} {bidHistory.length === 1 ? 'bid' : 'bids'})
                     </div>
                     <div className="text-3xl font-bold tabular-nums text-text-primary leading-none mt-1">
-                      {formatCurrency(auction.currentBid)}
+                      {formatCurrency(auction.currentBid ?? auction.startingPrice)}
                     </div>
                   </div>
                   <div className="text-right">
@@ -579,7 +597,7 @@ export function AuctionDetail() {
                       min={minBid}
                       step={auction.bidIncrement}
                       value={bidAmount}
-                      onChange={(e) => setBidAmount(Number(e.target.value))}
+                      onChange={(e) => { bidEditedRef.current = true; setBidAmount(Number(e.target.value)); }}
                       className="input-field pl-7 text-lg font-bold tabular-nums py-3"
                     />
                   </div>

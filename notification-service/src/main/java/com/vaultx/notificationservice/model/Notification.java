@@ -21,6 +21,9 @@ public class Notification {
     @Column(name = "event_type", nullable = false, length = 50)
     private String eventType;
 
+    @Column(name = "dedup_key", length = 255)
+    private String dedupKey;
+
     @Column(nullable = false, length = 20)
     private String channel;
 

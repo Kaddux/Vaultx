@@ -8,6 +8,7 @@ import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionRepository;
 import com.vaultx.bidding.repository.BidRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
+import com.vaultx.bidding.grpc.UserGrpcClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class AuctionScheduler {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
     private final BiddingMetrics biddingMetrics;
+    private final UserGrpcClient userGrpcClient;
 
     @Scheduled(fixedRate = 30000)
     @Transactional
@@ -85,6 +87,10 @@ public class AuctionScheduler {
             if ("AWAITING_PAYMENT".equals(status)) {
                 winnerId = bidRepository.findTopByAuctionIdOrderByAmountDesc(auction.getId())
                         .map(Bid::getBidderId).orElse(null);
+            } else if ("UNSOLD".equals(status)) {
+                // The auction didn't sell: release funds reserved by the top bid.
+                bidRepository.findByAuctionIdAndStatusOrderByCreatedAtDesc(auction.getId(), "WINNING")
+                        .forEach(bid -> releaseReserved(bid, auction.getId()));
             }
 
             try {
@@ -133,6 +139,20 @@ public class AuctionScheduler {
             lost.setEventType("AUCTION_LOST");
             lost.setPayload(objectMapper.writeValueAsString(payload));
             outboxEventRepository.save(lost);
+        }
+    }
+
+    private void releaseReserved(Bid bid, UUID auctionId) {
+        try {
+            userGrpcClient.updateWallet(
+                    bid.getBidderId().toString(),
+                    bid.getAmount().doubleValue(),
+                    "RELEASE",
+                    "BIDREL_" + bid.getId().toString(),
+                    "Release reserved funds for unsold auction " + auctionId);
+        } catch (Exception e) {
+            log.warn("Failed to release reserved funds for bid {} on auction {}: {}",
+                    bid.getId(), auctionId, e.getMessage());
         }
     }
 }

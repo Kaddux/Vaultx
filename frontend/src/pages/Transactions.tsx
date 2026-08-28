@@ -9,6 +9,8 @@ function TransactionTypePill({ type }: { type: Transaction['type'] }) {
     ESCROW_RELEASE: { cls: 'pill-indigo', label: 'ESCROW RELEASE' },
     REFUND: { cls: 'pill-blue', label: 'REFUND' },
     WITHDRAWAL: { cls: 'pill-purple', label: 'WITHDRAWAL' },
+    RESERVE: { cls: 'pill-amber', label: 'RESERVE' },
+    RELEASE: { cls: 'pill-indigo', label: 'RELEASE' },
   };
   const { cls, label } = configs[type];
   return <span className={cls}>{label}</span>;

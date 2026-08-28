@@ -9,6 +9,7 @@ service UserService {
     rpc GetUserProfile(GetUserProfileRequest) returns (UserProfile);
     rpc GetWalletBalance(GetWalletBalanceRequest) returns (WalletBalance);
     rpc UpdateWallet(UpdateWalletRequest) returns (WalletResponse);
+    rpc GetWalletTransactions(GetWalletTransactionsRequest) returns (WalletTransactionList);
 }
 
 message GetUserProfileRequest {
@@ -51,4 +52,21 @@ message WalletResponse {
     double new_reserved_balance = 3;
     string status = 4;
     string failure_reason = 5;
+}
+
+message GetWalletTransactionsRequest {
+    string user_id = 1;
+}
+
+message WalletTransactionItem {
+    string id = 1;
+    string transaction_type = 2;
+    double amount = 3;
+    string status = 4;
+    string description = 5;
+    string created_at = 6;
+}
+
+message WalletTransactionList {
+    repeated WalletTransactionItem transactions = 1;
 }

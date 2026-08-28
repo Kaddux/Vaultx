@@ -51,9 +51,22 @@ public class NotificationService {
                 continue;
             }
 
+            // Dedupe on (recipient, eventType, kafkaKey, channel) so at-least-once
+            // redelivery of the same event does not produce duplicate notifications.
+            String dedupKey = dedupeKey(template.recipientId().toString(), template.eventType(), key, channel);
+            if (notificationRepository
+                    .existsByUserIdAndEventTypeAndDedupKey(template.recipientId(), template.eventType(), dedupKey)) {
+                log.debug("Skipping duplicate notification {} {} '{}'", template.recipientId(), channel, key);
+                continue;
+            }
+
             boolean delivered = channelService.deliver(channel, profile, template);
-            saveNotification(template, channel, delivered);
+            saveNotification(template, channel, delivered, dedupKey);
         }
+    }
+
+    private String dedupeKey(String recipientId, String eventType, String key, String channel) {
+        return String.join("|", recipientId, eventType, key == null ? "" : key, channel);
     }
 
     private boolean isEnabled(UUID userId, String eventType, String channel) {
@@ -68,10 +81,11 @@ public class NotificationService {
         };
     }
 
-    private void saveNotification(Template template, String channel, boolean delivered) {
+    private void saveNotification(Template template, String channel, boolean delivered, String dedupKey) {
         Notification notification = new Notification();
         notification.setUserId(template.recipientId());
         notification.setEventType(template.eventType());
+        notification.setDedupKey(dedupKey);
         notification.setChannel(channel);
         notification.setTitle(template.title());
         notification.setMessage(template.message());

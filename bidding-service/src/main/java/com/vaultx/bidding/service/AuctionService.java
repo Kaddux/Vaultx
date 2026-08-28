@@ -10,6 +10,7 @@ import com.vaultx.bidding.model.AuctionMedia;
 import com.vaultx.bidding.model.OutboxEvent;
 import com.vaultx.bidding.repository.AuctionMediaRepository;
 import com.vaultx.bidding.repository.AuctionRepository;
+import com.vaultx.bidding.repository.BidRepository;
 import com.vaultx.bidding.repository.OutboxEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +30,7 @@ public class AuctionService {
     private final ObjectMapper objectMapper;
     private final BiddingMetrics biddingMetrics;
     private final AuctionMediaRepository auctionMediaRepository;
+    private final BidRepository bidRepository;
     private final StorageProperties storageProperties;
 
     @Transactional
@@ -45,7 +47,9 @@ public class AuctionService {
         auction.setEndTime(request.getEndTime());
         auction.setExtensionPeriodSeconds(request.getExtensionPeriodSeconds());
         auction.setCurrency(request.getCurrency());
-        auction.setStatus("PENDING");
+        auction.setStatus(request.getStartTime().isBefore(LocalDateTime.now())
+                ? "ACTIVE"
+                : "PENDING");
         Auction saved = auctionRepository.save(auction);
 
         try {
@@ -111,6 +115,7 @@ public class AuctionService {
         r.setExtensionPeriodSeconds(auction.getExtensionPeriodSeconds());
         r.setCurrency(auction.getCurrency());
         r.setCreatedAt(auction.getCreatedAt());
+        r.setBidCount((int) bidRepository.countByAuctionId(auction.getId()));
         auctionMediaRepository.findFirstByAuctionIdAndCoverTrue(auction.getId())
                 .ifPresent(media -> r.setCoverMediaUrl(coverUrl(media)));
         return r;

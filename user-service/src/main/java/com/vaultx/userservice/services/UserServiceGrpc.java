@@ -2,8 +2,10 @@ package com.vaultx.userservice.services;
 
 import com.vaultx.userservice.model.Users;
 import com.vaultx.userservice.model.Wallet;
+import com.vaultx.userservice.model.WalletTransaction;
 import com.vaultx.userservice.repository.UserRepository;
 import com.vaultx.userservice.repository.WalletRepository;
+import com.vaultx.userservice.repository.WalletTransactionRepository;
 import com.vaultx.userservice.services.WalletService.WalletResult;
 import com.vaultx.user.grpc.*;
 import io.grpc.stub.StreamObserver;
@@ -12,6 +14,8 @@ import net.devh.boot.grpc.server.service.GrpcService;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @GrpcService
@@ -20,6 +24,7 @@ public class UserServiceGrpc extends com.vaultx.user.grpc.UserServiceGrpc.UserSe
 
     private final UserRepository userRepository;
     private final WalletRepository walletRepository;
+    private final WalletTransactionRepository walletTransactionRepository;
     private final WalletService walletService;
 
     @Override
@@ -107,5 +112,32 @@ public class UserServiceGrpc extends com.vaultx.user.grpc.UserServiceGrpc.UserSe
             responseObserver.onNext(errorResponse);
             responseObserver.onCompleted();
     }
+    }
+
+    @Override
+    public void getWalletTransactions(GetWalletTransactionsRequest request,
+                                      StreamObserver<WalletTransactionList> responseObserver) {
+        try {
+            UUID userId = UUID.fromString(request.getUserId());
+            List<WalletTransaction> txs = walletTransactionRepository
+                    .findByUserIdOrderByCreatedAtDesc(userId);
+
+            WalletTransactionList.Builder list = WalletTransactionList.newBuilder();
+            for (WalletTransaction tx : txs) {
+                list.addTransactions(WalletTransactionItem.newBuilder()
+                        .setId(tx.getId().toString())
+                        .setTransactionType(tx.getTransactionType())
+                        .setAmount(tx.getAmount().doubleValue())
+                        .setStatus(tx.getStatus())
+                        .setDescription(tx.getDescription() == null ? "" : tx.getDescription())
+                        .setCreatedAt(tx.getCreatedAt() == null ? LocalDateTime.now().toString() : tx.getCreatedAt().toString())
+                        .build());
+            }
+            responseObserver.onNext(list.build());
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            responseObserver.onError(
+                    io.grpc.Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+        }
     }
 }

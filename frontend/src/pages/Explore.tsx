@@ -54,9 +54,11 @@ function AuctionCard({ auction }: { auction: Auction }) {
 
         {/* Current bid */}
         <div className="mt-3">
-          <div className="text-xs text-text-secondary font-medium">Current Bid</div>
+          <div className="text-xs text-text-secondary font-medium">
+            {auction.currentBid != null ? 'Current Bid' : 'Starting'}
+          </div>
           <div className="text-xl font-bold tabular-nums text-text-primary mt-0.5">
-            {formatCurrency(auction.currentBid)}
+            {formatCurrency(auction.currentBid ?? auction.startingPrice)}
           </div>
         </div>
 
@@ -160,8 +162,9 @@ export function Explore() {
     }
 
     // Sort
-    if (sort === 'price_asc') list.sort((a, b) => a.currentBid - b.currentBid);
-    else if (sort === 'price_desc') list.sort((a, b) => b.currentBid - a.currentBid);
+    const price = (a: Auction) => a.currentBid ?? a.startingPrice;
+    if (sort === 'price_asc') list.sort((a, b) => price(a) - price(b));
+    else if (sort === 'price_desc') list.sort((a, b) => price(b) - price(a));
     else if (sort === 'ending_soon') list.sort((a, b) => a.endsAt.getTime() - b.endsAt.getTime());
 
     return list;

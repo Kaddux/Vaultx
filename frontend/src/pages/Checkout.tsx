@@ -100,7 +100,7 @@ export function Checkout() {
   }
 
   const escrowStatus = payment?.status ?? 'HELD';
-  const amount = payment?.amount ?? soldAuction.currentBid;
+  const amount = payment?.amount ?? soldAuction.currentBid ?? soldAuction.startingPrice;
 
   return (
     <div className="min-h-screen bg-bg-base">

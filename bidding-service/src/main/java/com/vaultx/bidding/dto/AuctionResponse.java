@@ -25,4 +25,5 @@ public class AuctionResponse {
     private String currency;
     private LocalDateTime createdAt;
     private String coverMediaUrl;
+    private int bidCount;
 }

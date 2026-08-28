@@ -2,6 +2,7 @@ package com.vaultx.userservice.services;
 
 import com.vaultx.userservice.DTO.WalletDepositRequest;
 import com.vaultx.userservice.DTO.WalletResponse;
+import com.vaultx.userservice.DTO.WalletTransactionResponse;
 import com.vaultx.userservice.Exceptions.UserNotFoundException;
 import com.vaultx.userservice.model.Wallet;
 import com.vaultx.userservice.model.WalletTransaction;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +36,13 @@ public class WalletService {
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new UserNotFoundException("Wallet not found for user: " + userId));
         return toResponse(result, wallet);
+    }
+
+    public List<WalletTransactionResponse> getTransactions(UUID userId) {
+        return walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(userId)
+                .stream()
+                .map(WalletTransactionResponse::from)
+                .toList();
     }
 
     /**

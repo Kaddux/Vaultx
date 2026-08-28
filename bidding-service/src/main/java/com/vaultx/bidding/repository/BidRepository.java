@@ -15,7 +15,11 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
 
     Optional<Bid> findByIdempotencyKey(String idempotencyKey);
 
+    long countByAuctionId(UUID auctionId);
+
     List<Bid> findByAuctionIdOrderByCreatedAtDesc(UUID auctionId);
+
+    List<Bid> findByAuctionIdAndStatusOrderByCreatedAtDesc(UUID auctionId, String status);
 
     List<Bid> findByAuctionIdAndBidderIdOrderByCreatedAtDesc(UUID auctionId, UUID bidderId);
 
