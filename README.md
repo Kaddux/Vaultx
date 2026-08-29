@@ -2,6 +2,26 @@
 
 A production-grade, event-driven **Real-Time Bidding Platform** built with Java, Spring Boot 3, Apache Kafka, gRPC, and PostgreSQL. Buyers and sellers participate in live auctions with real-time bidding, wallet-based escrow, KYC verification, media uploads, and automated auction lifecycle management. Winner payments are settled online via **Stripe (test mode)**.
 
+## Showcase
+
+**Live auction with a video gallery, countdown, and real-time bidding:**
+![Live auction](screenshots/auction-live-bidding.png)
+
+**Ended auction → Stripe-powered settlement & escrow ("Pay with Stripe"):**
+![Payment settlement](screenshots/auction-settled-stripe.png)
+
+**Wallet & escrow ledger (reserve/release/deposit) with KYC verification:**
+![Wallet & escrow](screenshots/wallet-escrow.png)
+
+**Buyer dashboard — active bids, available funds, and notifications:**
+![Dashboard](screenshots/dashboard.png)
+
+**Observability — Prometheus/Grafana (bid latency, auction throughput, JVM heap):**
+![Grafana metrics](screenshots/grafana-metrics.png)
+
+**Landing page:**
+![Landing](screenshots/landing.png)
+
 ## Architecture
 
 ```
