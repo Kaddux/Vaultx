@@ -225,8 +225,10 @@ services:
     ports:
       - "8004:8004"
     environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - ASSISTANT_MODEL=${ASSISTANT_MODEL:-qwen3:8b}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      - APP_ASSISTANT_LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      - ASSISTANT_MODEL=${ASSISTANT_MODEL:-gemini-3.6-flash}
+      - ASSISTANT_API_KEY=${ASSISTANT_API_KEY:-}
       - SPRING_DATA_REDIS_HOST=redis
       - GATEWAY_URL=http://api-gateway:8080
       - JWT_PUBLIC_KEY_PATH=jwt-public.pem

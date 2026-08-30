@@ -8,8 +8,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Getter
 @Setter
 public class AssistantProperties {
-    private String ollamaBaseUrl = "http://localhost:11434";
-    private String model = "qwen3:8b";
+    private String llmBaseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
+    private String model = "gemini-3.6-flash";
+    private String apiKey = "";
     private double temperature = 0.2;
     private int maxIterations = 4;
     private String gatewayUrl = "http://localhost:8080";

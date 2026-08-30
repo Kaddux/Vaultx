@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vaultx.assistant.config.AssistantProperties;
 import com.vaultx.assistant.dto.OllamaMessage;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -28,7 +29,12 @@ public class OllamaClient {
     public OllamaClient(RestClient.Builder builder, AssistantProperties props, ObjectMapper objectMapper) {
         this.props = props;
         this.objectMapper = objectMapper;
-        this.restClient = builder.baseUrl(props.getOllamaBaseUrl()).build();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(120000);
+        this.restClient = builder.baseUrl(props.getLlmBaseUrl())
+                .requestFactory(factory)
+                .build();
     }
 
     /**
@@ -48,6 +54,11 @@ public class OllamaClient {
         String response = restClient.post()
                 .uri("/v1/chat/completions")
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .headers(h -> {
+                    if (props.getApiKey() != null && !props.getApiKey().isBlank()) {
+                        h.setBearerAuth(props.getApiKey());
+                    }
+                })
                 .body(body)
                 .retrieve()
                 .body(String.class);
@@ -65,14 +76,9 @@ public class OllamaClient {
             List<Map<String, Object>> toolCalls = new ArrayList<>();
             if (message.has("tool_calls")) {
                 for (JsonNode tc : message.path("tool_calls")) {
-                    Map<String, Object> call = new LinkedHashMap<>();
-                    call.put("id", tc.path("id").asText());
-                    call.put("type", tc.path("type").asText());
-                    Map<String, Object> fn = new LinkedHashMap<>();
-                    fn.put("name", tc.path("function").path("name").asText());
-                    fn.put("arguments", tc.path("function").path("arguments").asText());
-                    call.put("function", fn);
-                    toolCalls.add(call);
+                    // Preserve the full tool-call object (Gemini includes a thought_signature
+                    // that must be echoed back for tools to work correctly).
+                    toolCalls.add(objectMapper.convertValue(tc, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}));
                 }
             }
             return new OllamaMessage(role, content, toolCalls);
