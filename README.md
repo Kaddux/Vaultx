@@ -269,6 +269,23 @@ Bid placed → Bidding Service validates (gRPC) → saves bid + outbox
 → Notification Service delivers email/SMS/push (simulated)
 ```
 
+## AI Assistant
+
+An LLM agent (`assistant-service`) that answers questions by calling the Vaultx APIs, plus voice (browser Web Speech API for speech-to-text and speech-to-speech replies).
+
+```
+frontend chat widget ──▶ /api/assistant/chat ──▶ assistant-service ──▶ local Ollama (qwen3:8b, function-calling)
+                                                        │  tools call the API Gateway (with your JWT)
+                                                        ▼
+                                              list_auctions · get_auction · get_auction_bids · get_wallet
+```
+
+- Run **Ollama locally** (no container) and pull the model: `ollama serve` + `ollama pull qwen3:8b`.
+- Container reaches the host Ollama via `OLLAMA_BASE_URL=http://host.docker.internal:11434` (`extra_hosts: host.docker.internal:host-gateway`).
+- **Read-only** tools: search auctions (`list_auctions`), auction details (`get_auction`), bid summary / bidder count / time-left (`get_auction_bids`), and wallet balance (`get_wallet`). Amounts are USD.
+- Conversation memory is stored in Redis per `conversationId`.
+- Example: *"Find me auctions under $100"* → the agent searches and summarizes; *"Tell me about this auction"* → it explains the current bid, bidders, and time left.
+
 ## Testing
 
 ```bash

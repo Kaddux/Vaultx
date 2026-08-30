@@ -391,6 +391,17 @@ export const api = {
     remove: (auctionId: string) =>
       request<void>(`/api/auctions/${auctionId}/watchlist`, { method: 'DELETE' }),
   },
+  assistant: {
+    chat: (message: string, conversationId?: string) =>
+      request<{ reply: string; conversationId: string }>('/api/assistant/chat', {
+        method: 'POST',
+        body: JSON.stringify({ message, conversationId }),
+      }),
+    resetConversation: (conversationId: string) =>
+      request<{ status: string }>(`/api/assistant/conversations/${conversationId}/reset`, {
+        method: 'POST',
+      }),
+  },
 };
 
 // ═══ Presigned upload (direct to object storage) ═════════════════════════════

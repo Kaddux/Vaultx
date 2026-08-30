@@ -220,6 +220,24 @@ services:
       user-service:
         condition: service_started
 
+  assistant-service:
+    build: ./assistant-service
+    ports:
+      - "8004:8004"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - ASSISTANT_MODEL=${ASSISTANT_MODEL:-qwen3:8b}
+      - SPRING_DATA_REDIS_HOST=redis
+      - GATEWAY_URL=http://api-gateway:8080
+      - JWT_PUBLIC_KEY_PATH=jwt-public.pem
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+      api-gateway:
+        condition: service_started
+
   api-gateway:
     build: ./api-gateway
     ports:

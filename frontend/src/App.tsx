@@ -9,6 +9,7 @@ import { Wallet } from './pages/Wallet';
 import { Transactions } from './pages/Transactions';
 import { SellerPortal } from './pages/SellerPortal';
 import { Checkout } from './pages/Checkout';
+import { AssistantWidget } from './components/AssistantWidget';
 import { useAuth } from './context/AuthContext';
 
 function RootRoute() {
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/" element={<RootRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <AssistantWidget />
     </Router>
   );
 }

@@ -85,6 +85,13 @@ spring:
           filters:
             - JwtAuth
 
+        - id: assistant-service
+          uri: ${ASSISTANT_SERVICE_URI:http://assistant-service:8004}
+          predicates:
+            - Path=/api/assistant/**
+          filters:
+            - JwtAuth
+
         - id: notification-service
           uri: ${NOTIFICATION_SERVICE_URI:http://notification-service:8003}
           predicates:
