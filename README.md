@@ -4,6 +4,9 @@ A production-grade, event-driven **Real-Time Bidding Platform** built with Java,
 
 ## Showcase
 
+**Launch video — Vaultx in 25 seconds:**
+![Vaultx brag](brag-output/brag.gif)
+
 **Live auction with a video gallery, countdown, and real-time bidding:**
 ![Live auction](screenshots/auction-live-bidding.png)
 
